@@ -1,0 +1,30 @@
+[package]
+name = "windows-collector"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Windows Win32 implementation of the platform signal collector: foreground process/idle/input-event signals, local browser-title classification, and OS session/power-event registration wired into lifecycle::power_events."
+
+[dependencies]
+normalization = { path = "../normalization" }
+lifecycle = { path = "../lifecycle" }
+thiserror = "1"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_System_Threading",
+    "Win32_System_SystemInformation",
+    "Win32_System_RemoteDesktop",
+    "Win32_System_LibraryLoader",
+    # Required for windows-sys to even define WNDCLASSEXW/RegisterClassExW
+    # (used in native_loop.rs) — that struct is itself gated behind this
+    # feature upstream because one of its fields (hbrBackground) is typed
+    # HBRUSH, even though this crate never names a Graphics::Gdi type
+    # directly. Confirmed by removing it: the build fails with "no
+    # WNDCLASSEXW in Win32::UI::WindowsAndMessaging."
+    "Win32_Graphics_Gdi",
+] }
