@@ -1,0 +1,19 @@
+[package]
+name = "uploader"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Resilient, backoff-aware uploader draining the durable queue to the backend ingest endpoint."
+
+[dependencies]
+event-contract = { path = "../event-contract" }
+durable-queue = { path = "../durable-queue" }
+serde_json = "1"
+ureq = "2"
+rand = "0.8"
+thiserror = "1"
+
+[dev-dependencies]
+chrono = { version = "0.4", features = ["clock"], default-features = false }
+uuid = { version = "1", features = ["v4"] }

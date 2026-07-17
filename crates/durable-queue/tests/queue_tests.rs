@@ -314,6 +314,54 @@ fn acking_a_not_pending_event_is_a_noop() {
 }
 
 #[test]
+fn release_returns_a_leased_record_to_pending_immediately() {
+    // release() is what lets a consumer (AG-005's uploader) retry a record
+    // that failed to upload WITHIN the same process — without it, a
+    // dequeued-but-failed record would sit invisible in leased/ until the
+    // whole process restarted.
+    let dir = temp_dir("release");
+    let queue = open_queue(dir.clone());
+    let envelope = make_envelope();
+    queue.enqueue(&envelope).unwrap();
+
+    let leased = queue.dequeue_batch(10).unwrap();
+    assert_eq!(leased.len(), 1);
+    assert!(
+        queue.dequeue_batch(10).unwrap().is_empty(),
+        "a leased record must not be visible to dequeue_batch again"
+    );
+
+    queue.release(&envelope.event_id).unwrap();
+
+    let redequeued = queue.dequeue_batch(10).unwrap();
+    assert_eq!(
+        redequeued.len(),
+        1,
+        "a released record must be visible to dequeue_batch again, without reopening the queue"
+    );
+    assert_eq!(
+        redequeued[0].envelope.event_id.to_string(),
+        envelope.event_id.to_string()
+    );
+
+    fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn releasing_a_not_leased_event_is_a_noop() {
+    let dir = temp_dir("release-noop");
+    let queue = open_queue(dir.clone());
+    let envelope = make_envelope();
+
+    // Never dequeued at all — a caller retrying a release after its own
+    // error-handling path itself failed must not get an error here.
+    let result = queue.release(&envelope.event_id);
+    assert!(result.is_ok());
+
+    fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
 fn corrupt_file_is_quarantined_not_fatal() {
     let dir = temp_dir("corrupt");
     let queue = open_queue(dir.clone());

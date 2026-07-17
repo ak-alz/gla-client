@@ -328,6 +328,31 @@ impl DurableQueue {
         Ok(())
     }
 
+    /// The counterpart to `ack`: releases a leased-but-failed record back to
+    /// `pending/`, making it visible to `dequeue_batch` again immediately —
+    /// without this, a consumer (AG-005's uploader) that dequeues a batch
+    /// and then fails to process a record (upload error, transient or not)
+    /// would have no way to retry it within the same process; the record
+    /// would sit in `leased/`, invisible to further `dequeue_batch` calls,
+    /// until the whole process restarted and `open()`'s crash-recovery step
+    /// happened to find it. Releasing an `event_id` that is not currently
+    /// leased (never dequeued, already acked, or already released) is a
+    /// no-op, not an error — a caller retrying a release after its own
+    /// error-handling path itself failed must be able to call this safely.
+    pub fn release(&self, event_id: &EventId) -> Result<(), QueueError> {
+        let _guard = self.lock.lock().unwrap();
+
+        let name = format!("{event_id}.json");
+        let leased_path = self.leased_dir.join(&name);
+        if !leased_path.exists() {
+            return Ok(());
+        }
+        let pending_path = self.pending_dir.join(&name);
+        fs::rename(&leased_path, &pending_path)?;
+        fsync_dir(&self.pending_dir)?;
+        Ok(())
+    }
+
     /// Deletes `acked/` files older than `config.acked_retention`. Never
     /// touches `pending/`/`leased/` — retention is about not keeping upload
     /// receipts forever, not about bounding unacked data by age (that would
