@@ -1,0 +1,83 @@
+[
+  {
+    "title": "YouTube - Some Video",
+    "rules": {
+      "media": [
+        "youtube",
+        "netflix"
+      ],
+      "communication": [
+        "vk.com"
+      ]
+    },
+    "result": "media"
+  },
+  {
+    "title": "vk.com - Messages",
+    "rules": {
+      "media": [
+        "youtube"
+      ],
+      "communication": [
+        "vk.com"
+      ]
+    },
+    "result": "communication"
+  },
+  {
+    "title": null,
+    "rules": {
+      "media": [
+        "youtube"
+      ]
+    },
+    "result": null
+  },
+  {
+    "title": "Random Title",
+    "rules": {},
+    "result": null
+  },
+  {
+    "title": "Random Title",
+    "rules": {
+      "media": [
+        "youtube"
+      ]
+    },
+    "result": null
+  },
+  {
+    "title": "YOUTUBE VIDEO",
+    "rules": {
+      "media": [
+        "YouTube"
+      ]
+    },
+    "result": "media"
+  },
+  {
+    "title": "youtube and vk.com both mentioned",
+    "rules": {
+      "communication": [
+        "vk.com"
+      ],
+      "media": [
+        "youtube"
+      ]
+    },
+    "result": "communication"
+  },
+  {
+    "title": "youtube and vk.com both mentioned",
+    "rules": {
+      "media": [
+        "youtube"
+      ],
+      "communication": [
+        "vk.com"
+      ]
+    },
+    "result": "media"
+  }
+]

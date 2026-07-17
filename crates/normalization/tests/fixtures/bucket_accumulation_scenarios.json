@@ -1,0 +1,119 @@
+[
+  {
+    "name": "mixed_activity_full_consent",
+    "signals": {
+      "active_app_category_seconds": {
+        "ide": 4.0,
+        "browser": 2.0,
+        "other": 2.0
+      },
+      "input_activity_events": {
+        "keyboard": 19,
+        "mouse_move": 19,
+        "mouse_click": 5
+      },
+      "idle_seconds": 0.0,
+      "active_seconds": 8.0,
+      "activity_segments": [
+        {
+          "category": "ide",
+          "started_at": "2026-07-17T12:00:02+00:00",
+          "ended_at": "2026-07-17T12:00:06+00:00",
+          "duration_seconds": 4.0
+        },
+        {
+          "category": "browser",
+          "started_at": "2026-07-17T12:00:06+00:00",
+          "ended_at": "2026-07-17T12:00:08+00:00",
+          "duration_seconds": 2.0
+        }
+      ],
+      "unexplained_gaps": [],
+      "git_commits_count": null,
+      "app_seconds": {
+        "code.exe": 4.0,
+        "chrome.exe": 2.0,
+        "unknown-thing.exe": 2.0
+      },
+      "other_app_seconds": {
+        "unknown-thing.exe": 2.0
+      }
+    }
+  },
+  {
+    "name": "idle_below_gap_threshold",
+    "signals": {
+      "active_app_category_seconds": {
+        "ide": 4.0
+      },
+      "input_activity_events": {
+        "keyboard": 8,
+        "mouse_move": 0,
+        "mouse_click": 0
+      },
+      "idle_seconds": 2.0,
+      "active_seconds": 4.0,
+      "activity_segments": [
+        {
+          "category": "ide",
+          "started_at": "2026-07-17T12:00:02+00:00",
+          "ended_at": "2026-07-17T12:00:04+00:00",
+          "duration_seconds": 2.0
+        }
+      ],
+      "unexplained_gaps": [],
+      "git_commits_count": null,
+      "app_seconds": null,
+      "other_app_seconds": null
+    }
+  },
+  {
+    "name": "minimal_consent",
+    "signals": {
+      "active_app_category_seconds": null,
+      "input_activity_events": null,
+      "idle_seconds": null,
+      "active_seconds": 2.0,
+      "activity_segments": null,
+      "unexplained_gaps": null,
+      "git_commits_count": null,
+      "app_seconds": null,
+      "other_app_seconds": null
+    }
+  },
+  {
+    "name": "category_override_from_title",
+    "signals": {
+      "active_app_category_seconds": {
+        "media": 2.0,
+        "browser": 2.0
+      },
+      "input_activity_events": null,
+      "idle_seconds": null,
+      "active_seconds": 4.0,
+      "activity_segments": null,
+      "unexplained_gaps": null,
+      "git_commits_count": null,
+      "app_seconds": {
+        "chrome.exe": 4.0
+      },
+      "other_app_seconds": {}
+    }
+  },
+  {
+    "name": "config_category_override",
+    "signals": {
+      "active_app_category_seconds": {
+        "task_tracker": 2.0
+      },
+      "input_activity_events": null,
+      "idle_seconds": null,
+      "active_seconds": 2.0,
+      "activity_segments": null,
+      "unexplained_gaps": null,
+      "git_commits_count": null,
+      "app_seconds": null,
+      "other_app_seconds": null
+    }
+  }
+]

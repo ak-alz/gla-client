@@ -1,0 +1,23 @@
+{
+  "category": "ide",
+  "overrides": {
+    "mytool.exe": "ide"
+  },
+  "processes": [
+    "clion64.exe",
+    "code.exe",
+    "datagrip64.exe",
+    "devenv.exe",
+    "goland64.exe",
+    "idea64.exe",
+    "mytool.exe",
+    "notepad++.exe",
+    "phpstorm64.exe",
+    "pycharm64.exe",
+    "rider64.exe",
+    "rubymine64.exe",
+    "sublime_text.exe",
+    "vmconnect.exe",
+    "webstorm64.exe"
+  ]
+}

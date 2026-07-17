@@ -1,0 +1,90 @@
+[
+  {
+    "process_name": "chrome.exe",
+    "overrides": null,
+    "category": "browser",
+    "label": "Браузер"
+  },
+  {
+    "process_name": "CHROME.EXE",
+    "overrides": null,
+    "category": "browser",
+    "label": "Браузер"
+  },
+  {
+    "process_name": "  code.exe  ",
+    "overrides": null,
+    "category": "ide",
+    "label": "IDE"
+  },
+  {
+    "process_name": "pycharm64.exe",
+    "overrides": null,
+    "category": "ide",
+    "label": "IDE"
+  },
+  {
+    "process_name": null,
+    "overrides": null,
+    "category": "other",
+    "label": "Другое"
+  },
+  {
+    "process_name": "",
+    "overrides": null,
+    "category": "other",
+    "label": "Другое"
+  },
+  {
+    "process_name": "totally-unknown-app.exe",
+    "overrides": null,
+    "category": "other",
+    "label": "Другое"
+  },
+  {
+    "process_name": "my-vpn-client.exe",
+    "overrides": null,
+    "category": "system",
+    "label": "Система"
+  },
+  {
+    "process_name": "SomeUpdater.exe",
+    "overrides": null,
+    "category": "system",
+    "label": "Система"
+  },
+  {
+    "process_name": "custom-tool.exe",
+    "overrides": {
+      "custom-tool.exe": "task_tracker"
+    },
+    "category": "task_tracker",
+    "label": "Трекер задач"
+  },
+  {
+    "process_name": "chrome.exe",
+    "overrides": {
+      "chrome.exe": "communication"
+    },
+    "category": "communication",
+    "label": "Коммуникации"
+  },
+  {
+    "process_name": "bitrix24.exe",
+    "overrides": null,
+    "category": "task_tracker",
+    "label": "Трекер задач"
+  },
+  {
+    "process_name": "steam.exe",
+    "overrides": null,
+    "category": "games",
+    "label": "Игры"
+  },
+  {
+    "process_name": "explorer.exe",
+    "overrides": null,
+    "category": "system",
+    "label": "Система"
+  }
+]

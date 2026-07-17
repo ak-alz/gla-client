@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/event-contract", "crates/durable-queue", "crates/uploader"]
+members = ["crates/event-contract", "crates/durable-queue", "crates/uploader", "crates/normalization"]
 
 [workspace.package]
 edition = "2021"
