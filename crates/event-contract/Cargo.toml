@@ -1,0 +1,17 @@
+[package]
+name = "event-contract"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Versioned productivity event envelope shared by every agent-core platform collector."
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde", "clock"], default-features = false }
+uuid = { version = "1", features = ["v4", "serde"] }
+thiserror = "1"
+
+[dev-dependencies]
+serde_json = "1"
