@@ -1,0 +1,18 @@
+[package]
+name = "lifecycle"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Single-instance enforcement, autostart, crash/quit distinction, power-event handling, and log rotation for the agent process."
+
+[dependencies]
+chrono = { version = "0.4", features = ["clock"], default-features = false }
+thiserror = "1"
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.52"
+windows-sys = { version = "0.59", features = ["Win32_System_Recovery", "Win32_Foundation"] }
+
+[dev-dependencies]
+ui-shell = { path = "../ui-shell" }
