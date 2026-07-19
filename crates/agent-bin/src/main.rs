@@ -354,6 +354,25 @@ fn main() {
         std::thread::spawn(move || run_power_loop(state, stop))
     };
 
+    // `systemctl --user stop`/`restart` sends SIGTERM by default (its
+    // `KillSignal`) — without reacting to it, that ordinary service stop
+    // is indistinguishable from a crash on the next startup (found by
+    // AG-LNX-003's independent review). Converges onto the exact same
+    // shutdown path `run_tray` already takes when the user clicks Quit,
+    // rather than duplicating the stop/join/log/mark-clean-exit sequence
+    // below for a second call site.
+    #[cfg(target_os = "linux")]
+    {
+        use signal_hook::consts::{SIGINT, SIGTERM};
+        use signal_hook::iterator::Signals;
+        let mut signals = Signals::new([SIGTERM, SIGINT]).expect("register SIGTERM/SIGINT handler");
+        std::thread::spawn(move || {
+            if signals.forever().next().is_some() {
+                ui_shell::request_quit();
+            }
+        });
+    }
+
     let _ = log.append("agent started");
     let controller = Arc::new(Controller {
         state: Arc::clone(&state),

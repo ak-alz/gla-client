@@ -27,3 +27,11 @@ windows-collector = { path = "../windows-collector" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 linux-collector = { path = "../linux-collector" }
+# systemd's default `KillSignal` for `systemctl --user stop`/`restart` is
+# SIGTERM — without a handler for it, that normal service stop looks
+# identical to a crash on next startup (found by AG-LNX-003's
+# independent review). signal-hook is the standard safe way to react to
+# a Unix signal from ordinary Rust code (it moves the actual work off the
+# raw signal handler via a self-pipe, so there's no async-signal-safety
+# tightrope to walk here).
+signal-hook = "0.3"

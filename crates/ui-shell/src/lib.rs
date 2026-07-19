@@ -29,4 +29,6 @@ pub use menu_model::{build_menu, MenuAction, MenuEntry};
 pub use status::{
     last_sync_line, pause_resume_label, pending_line, status_line, version_line, AgentStatus,
 };
+#[cfg(target_os = "linux")]
+pub use tray::request_quit;
 pub use tray::{run_tray, AgentController};

@@ -268,3 +268,19 @@ pub fn run_tray(controller: Arc<dyn AgentController>) -> Result<(), Box<dyn std:
     gtk::main();
     Ok(())
 }
+
+/// Lets a caller outside the GTK thread (e.g. `agent-bin`'s SIGTERM/SIGINT
+/// handler thread — see its doc comment for why `systemctl --user stop`
+/// needs this) ask the tray loop to quit exactly as if the user had
+/// clicked Quit. `MainContext::invoke` is the documented thread-safe way
+/// to schedule a closure onto the thread that owns a given `MainContext`
+/// (here, the default one `run_tray` runs on) — calling `gtk::main_quit()`
+/// directly from another thread would not be safe, GTK/GLib objects are
+/// not thread-safe to touch except through mechanisms built for exactly
+/// this.
+#[cfg(target_os = "linux")]
+pub fn request_quit() {
+    glib::MainContext::default().invoke(|| {
+        gtk::main_quit();
+    });
+}
