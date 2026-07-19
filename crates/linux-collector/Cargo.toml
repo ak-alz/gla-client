@@ -1,0 +1,19 @@
+[package]
+name = "linux-collector"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Linux implementation of the platform signal collector: X11 (EWMH active window, XScreenSaver idle) and Hyprland (IPC) active-window backends, evdev-based input-event counting shared by both, DE-agnostic session/power via logind D-Bus. GNOME/KDE report an explicit unsupported status pending a not-yet-shipped Shell extension/KWin script (see docs/02_ARCHITECTURE/AGENT_LINUX_CAPABILITY_MATRIX.md)."
+
+[dependencies]
+collector-core = { path = "../collector-core" }
+lifecycle = { path = "../lifecycle" }
+thiserror = "1"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+x11rb = { version = "0.14", features = ["screensaver"] }
+zbus = "5"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+libc = "0.2"

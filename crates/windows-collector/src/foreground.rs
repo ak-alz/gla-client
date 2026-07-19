@@ -28,7 +28,11 @@
 /// Extracts the file-name component from a full path, matching what
 /// `psutil.Process(pid).name()` returns from a full image path — pure,
 /// platform-independent, and exercised directly by unit tests without
-/// needing a real process handle.
+/// needing a real process handle. Only called from `process_name_for_hwnd`'s
+/// `#[cfg(windows)]` body in production — on other platforms it's
+/// exercised solely by this file's own tests, hence the `dead_code`
+/// allowance there.
+#[cfg_attr(not(windows), allow(dead_code))]
 pub fn extract_file_name(full_path: &str) -> Option<String> {
     std::path::Path::new(full_path)
         .file_name()
@@ -100,7 +104,16 @@ mod tests {
     use super::*;
 
     #[test]
+    #[cfg(windows)]
     fn extracts_file_name_from_windows_path() {
+        // `\` is only a path separator to `std::path::Path` when the
+        // *target* is Windows — running this workspace's tests on Linux
+        // (AG-LNX-002) surfaced that this test, unguarded, fails there
+        // for the correct, expected reason: `Path::new` on Linux treats
+        // the whole backslash-joined string as one filename component.
+        // Not a bug in `extract_file_name` (only ever called on Windows
+        // in production) — a test-portability gap, fixed by scoping the
+        // test to the platform whose path semantics it actually checks.
         assert_eq!(
             extract_file_name(r"C:\Program Files\Google\Chrome\Application\chrome.exe"),
             Some("chrome.exe".to_string())

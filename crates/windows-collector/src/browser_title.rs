@@ -11,6 +11,10 @@ use std::collections::HashSet;
 
 /// Pure gating logic mirroring `_classify_browser_title`'s two early
 /// returns, split out so it's testable without any real window/title.
+/// Only called from `classify_browser_title`'s `#[cfg(windows)]` body —
+/// on other platforms it's exercised solely by this file's own tests
+/// below, hence the `dead_code` allowance there.
+#[cfg_attr(not(windows), allow(dead_code))]
 pub fn should_classify(
     process_name: &str,
     browser_process_names: &HashSet<String>,

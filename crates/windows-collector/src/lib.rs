@@ -23,6 +23,7 @@ mod idle;
 mod input_counters;
 mod native_loop;
 
-pub use collector::{CollectorError, RawSignalSnapshot, SignalCollector, WindowsSignalCollector};
+pub use collector::{CollectorError, WindowsSignalCollector};
+pub use collector_core::{RawSignalSnapshot, SignalCollector};
 pub use hooks::InputHooksError;
 pub use native_loop::{LifecycleNotification, NativeLoop, NativeLoopError};

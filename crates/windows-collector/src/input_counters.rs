@@ -28,14 +28,21 @@ impl InputCounters {
         }
     }
 
+    // These three are only called from `hooks.rs`'s `#[cfg(windows)]`
+    // hook procedures in production — on other platforms they're
+    // exercised solely by this file's own tests, hence the `dead_code`
+    // allowance.
+    #[cfg_attr(not(windows), allow(dead_code))]
     pub fn record_keyboard(&self) {
         self.keyboard.fetch_add(1, Ordering::Relaxed);
     }
 
+    #[cfg_attr(not(windows), allow(dead_code))]
     pub fn record_mouse_move(&self) {
         self.mouse_move.fetch_add(1, Ordering::Relaxed);
     }
 
+    #[cfg_attr(not(windows), allow(dead_code))]
     pub fn record_mouse_click(&self) {
         self.mouse_click.fetch_add(1, Ordering::Relaxed);
     }

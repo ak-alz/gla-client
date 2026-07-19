@@ -7,6 +7,7 @@ publish.workspace = true
 description = "Windows Win32 implementation of the platform signal collector: foreground process/idle/input-event signals, local browser-title classification, and OS session/power-event registration wired into lifecycle::power_events."
 
 [dependencies]
+collector-core = { path = "../collector-core" }
 normalization = { path = "../normalization" }
 lifecycle = { path = "../lifecycle" }
 thiserror = "1"

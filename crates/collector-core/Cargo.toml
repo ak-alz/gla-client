@@ -1,0 +1,7 @@
+[package]
+name = "collector-core"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Platform-agnostic signal-collector contract shared by every native collector (windows-collector, linux-collector, and future macOS) — mirrors core/interfaces.py::SignalCollector exactly."

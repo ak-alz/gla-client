@@ -1,6 +1,8 @@
 //! `WindowsSignalCollector` — ties `hooks`/`idle`/`foreground`/
 //! `browser_title` together into the same `start`/`stop`/`poll` contract
-//! as `core/interfaces.py::SignalCollector`, and `poll()` mirrors
+//! as `core/interfaces.py::SignalCollector` (now `collector_core::
+//! SignalCollector`, shared with `linux-collector` since AG-LNX-002 —
+//! see that crate's doc comment), and `poll()` mirrors
 //! `WindowsSignalCollector.poll()` in the Python source field-for-field
 //! and call-for-call, including the exact order (drain input counters
 //! first, then idle, then foreground hwnd, then process name, then —
@@ -11,39 +13,10 @@ use crate::browser_title::classify_browser_title;
 use crate::foreground::{foreground_hwnd, process_name_for_hwnd};
 use crate::hooks::{InputHooks, InputHooksError};
 use crate::idle::get_idle_seconds;
+use collector_core::{RawSignalSnapshot, SignalCollector};
 use normalization::TitleRules;
 use std::collections::HashSet;
 use thiserror::Error;
-
-/// What one `poll()` returns — mirrors `core/interfaces.py::RawSignalSnapshot`
-/// field-for-field. Never carries a window title or any input value, only
-/// counts/flags/the process name — the same architectural privacy boundary
-/// as the Python source, ported unchanged rather than reinvented.
-#[derive(Debug, Clone)]
-pub struct RawSignalSnapshot {
-    pub active_process_name: Option<String>,
-    pub keyboard_events: i64,
-    pub mouse_move_events: i64,
-    pub mouse_click_events: i64,
-    pub is_idle: bool,
-    pub idle_seconds: f64,
-    pub category_override: Option<String>,
-}
-
-/// Mirrors `core/interfaces.py::SignalCollector` — the platform-agnostic
-/// contract every native collector implements. Colocated here (rather
-/// than in its own tiny crate) because Windows is the only platform this
-/// contract has an implementation for today; if/when AG-LNX-001 or
-/// AG-MAC-001 need the same trait, hoisting it into a shared crate at
-/// that point is a rename plus a `pub use`, not a redesign — not done
-/// preemptively for one implementation (see this project's
-/// rule-of-three discipline elsewhere, e.g. `normalization::ALGORITHM_VERSION`'s
-/// doc comment).
-pub trait SignalCollector {
-    fn start(&mut self) -> Result<(), CollectorError>;
-    fn stop(&mut self);
-    fn poll(&mut self) -> RawSignalSnapshot;
-}
 
 #[derive(Debug, Error)]
 pub enum CollectorError {
@@ -77,6 +50,8 @@ impl WindowsSignalCollector {
 }
 
 impl SignalCollector for WindowsSignalCollector {
+    type Error = CollectorError;
+
     fn start(&mut self) -> Result<(), CollectorError> {
         self.hooks = Some(InputHooks::start()?);
         Ok(())

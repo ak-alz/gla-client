@@ -31,7 +31,9 @@
 //! (an actual sleep/lock/logoff) is synthetic rather than physically
 //! triggered.
 
-use std::sync::mpsc::{self, Receiver};
+#[cfg(windows)]
+use std::sync::mpsc;
+use std::sync::mpsc::Receiver;
 use std::thread::JoinHandle;
 use thiserror::Error;
 
@@ -54,6 +56,10 @@ pub enum NativeLoopError {
 
 pub struct NativeLoop {
     thread: Option<JoinHandle<()>>,
+    // Only read by `imp::post_quit` in `stop()`'s `#[cfg(windows)]` line
+    // — genuinely unused on other platforms, where `start()` never
+    // installs a real thread to begin with.
+    #[cfg_attr(not(windows), allow(dead_code))]
     thread_id: u32,
     /// This instance's own real message-only window handle — kept
     /// per-instance (not a shared global) so two `NativeLoop`s running

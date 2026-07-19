@@ -14,7 +14,11 @@
 /// parity (there is no golden fixture covering this OS-integer-wraparound
 /// edge case, and it only differs from the Python behavior once every ~49.7
 /// days of continuous uptime), documented here and in SUMMARY.md rather
-/// than silently diverging.
+/// than silently diverging. Only called from `get_idle_seconds`'s
+/// `#[cfg(windows)]` body in production — on other platforms it's
+/// exercised solely by this file's own tests, hence the `dead_code`
+/// allowance there.
+#[cfg_attr(not(windows), allow(dead_code))]
 pub fn idle_seconds_from_ticks(current_tick: u32, last_input_tick: u32) -> f64 {
     let idle_ms = current_tick.wrapping_sub(last_input_tick);
     idle_ms as f64 / 1000.0

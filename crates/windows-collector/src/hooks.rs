@@ -23,8 +23,11 @@
 //! parallel test run on their live, interactive machine.
 
 use crate::input_counters::InputCounters;
+#[cfg(windows)]
 use std::sync::mpsc;
-use std::thread::{self, JoinHandle};
+#[cfg(windows)]
+use std::thread;
+use std::thread::JoinHandle;
 use thiserror::Error;
 
 static COUNTERS: InputCounters = InputCounters::new();
@@ -156,6 +159,10 @@ mod imp {
 /// source, which stops both `pynput` listeners.
 pub struct InputHooks {
     thread: Option<JoinHandle<()>>,
+    // Only read by `imp::post_quit` in the `#[cfg(windows)]` half of
+    // `stop()` — genuinely unused on other platforms, where `start()`
+    // never installs a real thread to begin with.
+    #[cfg_attr(not(windows), allow(dead_code))]
     thread_id: u32,
 }
 
