@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/event-contract", "crates/durable-queue", "crates/uploader", "crates/normalization", "crates/ui-shell", "crates/lifecycle", "crates/windows-collector"]
+members = ["crates/event-contract", "crates/durable-queue", "crates/uploader", "crates/normalization", "crates/ui-shell", "crates/lifecycle", "crates/windows-collector", "crates/agent-bin"]
 
 [workspace.package]
 edition = "2021"

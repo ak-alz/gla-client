@@ -62,6 +62,34 @@ fn open_queue(dir: PathBuf) -> DurableQueue {
 }
 
 #[test]
+fn pending_count_reflects_enqueue_dequeue_and_ack() {
+    let dir = temp_dir("pending-count");
+    let queue = open_queue(dir.clone());
+    assert_eq!(queue.pending_count().unwrap(), 0);
+
+    let a = make_envelope();
+    let b = make_envelope();
+    queue.enqueue(&a).unwrap();
+    queue.enqueue(&b).unwrap();
+    assert_eq!(queue.pending_count().unwrap(), 2);
+
+    let batch = queue.dequeue_batch(10).unwrap();
+    assert_eq!(
+        queue.pending_count().unwrap(),
+        0,
+        "checked-out records move to leased/, no longer counted as pending"
+    );
+
+    queue.ack(&batch[0].envelope.event_id).unwrap();
+    queue.release(&batch[1].envelope.event_id).unwrap();
+    assert_eq!(
+        queue.pending_count().unwrap(),
+        1,
+        "the released (not acked) record returns to pending/"
+    );
+}
+
+#[test]
 fn enqueue_then_dequeue_round_trips() {
     let dir = temp_dir("roundtrip");
     let queue = open_queue(dir.clone());

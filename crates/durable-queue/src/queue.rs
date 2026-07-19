@@ -399,6 +399,25 @@ impl DurableQueue {
         Ok(total)
     }
 
+    /// Number of records currently sitting in `pending/` — not `leased/`
+    /// (already checked out by an in-progress upload batch) or
+    /// `quarantine/`. Added for `agent-bin`'s tray status display
+    /// (`AgentStatus::pending_count`), which needs a plain count, not a
+    /// byte total — the same "a real integration need surfaced a real,
+    /// narrow gap in an already-shipped crate" pattern as `release()`
+    /// (added during AG-005's integration with `uploader`).
+    pub fn pending_count(&self) -> Result<usize, QueueError> {
+        let _guard = self.lock.lock().unwrap();
+        let mut count = 0usize;
+        for entry in fs::read_dir(&self.pending_dir)? {
+            let entry = entry?;
+            if entry.path().extension().and_then(|e| e.to_str()) == Some("json") {
+                count += 1;
+            }
+        }
+        Ok(count)
+    }
+
     pub fn dir(&self) -> &Path {
         &self.dir
     }
