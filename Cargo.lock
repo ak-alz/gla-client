@@ -29,9 +29,11 @@ name = "agent-bin"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "collector-core",
  "durable-queue",
  "event-contract",
  "lifecycle",
+ "linux-collector",
  "normalization",
  "serde",
  "serde_json",
@@ -2804,6 +2806,8 @@ name = "ui-shell"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "glib",
+ "gtk",
  "open",
  "thiserror 1.0.69",
  "tray-icon",

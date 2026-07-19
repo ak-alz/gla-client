@@ -1,0 +1,12 @@
+%echo Generating Growth Layer Agent Linux packaging signing key
+Key-Type: RSA
+Key-Length: 4096
+Subkey-Type: RSA
+Subkey-Length: 4096
+Name-Real: Growth Layer Agent (Linux Packaging, self-generated)
+Name-Email: packaging@growth-layer.local
+Name-Comment: AG-LNX-003 demo signing key - NOT a production/CA-trusted key
+Expire-Date: 2y
+%no-protection
+%commit
+%echo done

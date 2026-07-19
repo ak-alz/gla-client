@@ -1,11 +1,13 @@
-//! `growth-layer-agent.exe` — the single running process AG-WIN-002's
-//! installer packages. Wires together every building-block crate from
-//! AG-003 through AG-WIN-001 into one real agent: lifecycle guarantees
-//! (single instance, crash detection, crash-restart registration,
-//! autostart, rotating log, real session/power-event registration),
-//! `windows-collector`'s real signal collection, `normalization`'s bucket
-//! accumulation, `durable-queue`'s crash-safe local persistence,
-//! `uploader`'s resilient batch upload, and `ui-shell`'s tray.
+//! `growth-layer-agent` — the single running process AG-WIN-002/
+//! AG-LNX-003's installers package. Wires together every building-block
+//! crate from AG-003 through AG-LNX-002 into one real agent: lifecycle
+//! guarantees (single instance, crash detection, crash-restart
+//! registration, autostart, rotating log, real session/power-event
+//! registration), a platform signal collector (`windows_collector` or
+//! `linux_collector`, chosen at compile time — see `platform.rs`),
+//! `normalization`'s bucket accumulation, `durable-queue`'s crash-safe
+//! local persistence, `uploader`'s resilient batch upload, and
+//! `ui-shell`'s tray.
 //!
 //! Deliberately NOT a full re-implementation of `agent/main.py`'s
 //! business logic (no `config.yaml`-equivalent consent/category-override
@@ -17,8 +19,10 @@
 
 mod config;
 mod paths;
+mod platform;
 
 use chrono::Utc;
+use collector_core::SignalCollector;
 use durable_queue::{DurableQueue, QueueConfig};
 use event_contract::{Consent, DeviceId, Envelope, NewEnvelope, Payload};
 use lifecycle::{
@@ -26,13 +30,13 @@ use lifecycle::{
     RotatingLog,
 };
 use normalization::{BucketAccumulator, Tick};
-use std::collections::{BTreeMap, HashSet};
+use platform::{new_collector, NativeLoop};
+use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use ui_shell::{run_tray, AgentController, AgentStatus};
 use uploader::{BackoffConfig, BackoffState, Uploader, UploaderConfig, UreqTransport};
-use windows_collector::{NativeLoop, SignalCollector, WindowsSignalCollector};
 
 const AGENT_VERSION: &str = "0.1.0-rust-prototype";
 const AUTOSTART_APP_NAME: &str = "GrowthLayerAgent";
@@ -117,7 +121,7 @@ fn run_collector_loop(
     stop: Arc<AtomicBool>,
     log: Arc<RotatingLog>,
 ) {
-    let mut collector = WindowsSignalCollector::new(120.0, HashSet::<String>::new(), Vec::new());
+    let mut collector = new_collector();
     if collector.start().is_err() {
         return;
     }

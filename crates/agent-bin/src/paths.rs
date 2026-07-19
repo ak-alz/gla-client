@@ -1,23 +1,40 @@
 //! Per-user data directory layout — deliberately separate from the
-//! install directory (`%LOCALAPPDATA%\Programs\GrowthLayerAgent\`, where
-//! the installer places the executable) so an upgrade/reinstall, which
-//! only touches the install directory, structurally cannot disturb the
+//! install directory (`%LOCALAPPDATA%\Programs\GrowthLayerAgent\` on
+//! Windows, `/opt/growth-layer-agent`/`/usr/bin` on Linux, wherever the
+//! installer places the executable) so an upgrade/reinstall, which only
+//! touches the install directory, structurally cannot disturb the
 //! device pairing identity or the offline queue. This split is exactly
 //! what makes "Pairing survives update"/"Queue survives update" true by
 //! construction rather than by installer-script discipline alone — see
-//! `agent-core/installer/windows/agent.iss`'s doc comment for the
-//! installer-side half of this argument.
+//! `agent-core/installer/windows/agent.iss` and
+//! `agent-core/installer/linux/`'s doc comments for each installer's
+//! half of this argument.
 
 use std::path::PathBuf;
 
-/// `%LOCALAPPDATA%\GrowthLayerAgent\` — never inside the install
-/// directory, never touched by the installer at all (uninstall does not
-/// remove it by default — see the installer script for that decision).
+/// `%LOCALAPPDATA%\GrowthLayerAgent\` on Windows, `$XDG_DATA_HOME/
+/// growth-layer-agent` (falling back to `~/.local/share/growth-layer-agent`
+/// per the XDG Base Directory spec, the standard convention already used
+/// for `~/.config/systemd/user/` in `lifecycle::Autostart`'s Linux path)
+/// on Linux — never inside the install directory, never touched by the
+/// installer at all (uninstall does not remove it by default — see each
+/// installer script for that decision).
 pub fn data_dir() -> PathBuf {
-    let base = std::env::var_os("LOCALAPPDATA")
+    #[cfg(windows)]
+    let base = std::env::var_os("LOCALAPPDATA").map(PathBuf::from);
+    #[cfg(not(windows))]
+    let base = std::env::var_os("XDG_DATA_HOME")
         .map(PathBuf::from)
-        .unwrap_or_else(std::env::temp_dir); // extremely defensive fallback only
-    base.join("GrowthLayerAgent")
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/share")));
+
+    let base = base.unwrap_or_else(std::env::temp_dir); // extremely defensive fallback only
+
+    #[cfg(windows)]
+    let name = "GrowthLayerAgent";
+    #[cfg(not(windows))]
+    let name = "growth-layer-agent";
+
+    base.join(name)
 }
 
 pub fn queue_dir() -> PathBuf {

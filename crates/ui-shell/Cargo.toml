@@ -13,4 +13,15 @@ winit = "0.30"
 open = "5"
 thiserror = "1"
 
+# tray-icon's Linux backend is GTK-based and needs the caller to drive a
+# real GTK main loop (`gtk::init`/`gtk::main`) — winit does not do this
+# for us on Linux, unlike Windows/macOS where winit's own event loop is
+# sufficient. See tray.rs's `#[cfg(target_os = "linux")]` half of
+# `run_tray` and its doc comment for why (a real panic — "GTK has not
+# been initialized" — found by actually running this crate on Linux for
+# the first time, in AG-LNX-003).
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"
+glib = "0.18"
+
 [dev-dependencies]

@@ -19,9 +19,13 @@ use std::sync::Arc;
 use std::time::Duration;
 use tray_icon::menu::{Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem};
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
+#[cfg(not(target_os = "linux"))]
 use winit::application::ApplicationHandler;
+#[cfg(not(target_os = "linux"))]
 use winit::event::WindowEvent;
+#[cfg(not(target_os = "linux"))]
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
+#[cfg(not(target_os = "linux"))]
 use winit::window::WindowId;
 
 /// The seam between this crate's tray plumbing and whatever process
@@ -119,31 +123,48 @@ impl App {
         self.last_status = status;
     }
 
-    fn handle_action(&mut self, action: MenuAction, event_loop: &ActiveEventLoop) {
+    /// Returns `true` when `Quit` was chosen — deliberately does NOT take
+    /// a winit `ActiveEventLoop` (unlike an earlier version of this
+    /// method), so this same logic drives both the winit-based event
+    /// loop (Windows/macOS) and the GTK-based one (Linux) below; each
+    /// caller decides HOW to actually stop its own loop when this
+    /// returns `true`.
+    fn handle_action(&mut self, action: MenuAction) -> bool {
         match action {
             MenuAction::ToggleActive => {
                 self.controller.toggle_active();
                 self.refresh();
+                false
             }
             MenuAction::OpenDiagnostics => {
                 let _ = crate::browser::open_url(&self.controller.diagnostics_url());
+                false
             }
             MenuAction::OpenDashboard => {
                 let _ = crate::browser::open_url(&self.controller.dashboard_url());
+                false
             }
             MenuAction::OpenHelp => {
                 let _ = crate::browser::open_url(&self.controller.help_url());
+                false
             }
             MenuAction::CheckForUpdates => {
                 // Disabled in the menu until AG-UPD-001+ exist — a click
                 // should be unreachable, but if one somehow arrives, doing
                 // nothing is the safe default, not a crash or a fake success.
+                false
             }
-            MenuAction::Quit => event_loop.exit(),
+            MenuAction::Quit => true,
         }
     }
 }
 
+/// Winit's own event loop is sufficient to pump `tray-icon` on Windows
+/// and macOS (its native message/run loop already carries the tray's
+/// events) — NOT on Linux, where `tray-icon`'s backend is GTK-based and
+/// needs a real, separate GTK main loop the caller must drive (see the
+/// `#[cfg(target_os = "linux")]` `run_tray` below and its doc comment).
+#[cfg(not(target_os = "linux"))]
 impl ApplicationHandler for App {
     fn resumed(&mut self, _event_loop: &ActiveEventLoop) {}
 
@@ -159,7 +180,10 @@ impl ApplicationHandler for App {
 
         while let Ok(event) = MenuEvent::receiver().try_recv() {
             if let Some(action) = self.action_by_id.get(&event.id).copied() {
-                self.handle_action(action, event_loop);
+                if self.handle_action(action) {
+                    event_loop.exit();
+                    return;
+                }
             }
         }
 
@@ -167,14 +191,7 @@ impl ApplicationHandler for App {
     }
 }
 
-/// Runs the tray shell on the calling thread until the user chooses Quit.
-/// Blocks — callers that also need to run a background collector/uploader
-/// loop must do so on a SEPARATE thread before calling this (see
-/// `examples/tray_demo.rs` for a concrete demonstration that the tray and
-/// the background loop are independent of one another, satisfying "UI не
-/// нужен для работы collector"/"Collector продолжает работать без
-/// открытого UI").
-pub fn run_tray(controller: Arc<dyn AgentController>) -> Result<(), Box<dyn std::error::Error>> {
+fn build_app(controller: Arc<dyn AgentController>) -> Result<App, Box<dyn std::error::Error>> {
     let initial_status = controller.status();
     let is_active = initial_status.paired && !initial_status.is_paused;
 
@@ -187,15 +204,67 @@ pub fn run_tray(controller: Arc<dyn AgentController>) -> Result<(), Box<dyn std:
         .with_icon(make_icon(is_active))
         .build()?;
 
-    let mut app = App {
+    Ok(App {
         controller,
         tray,
         action_by_id: built.action_by_id,
         last_status: initial_status,
-    };
+    })
+}
 
+/// Runs the tray shell on the calling thread until the user chooses Quit.
+/// Blocks — callers that also need to run a background collector/uploader
+/// loop must do so on a SEPARATE thread before calling this (see
+/// `examples/tray_demo.rs` for a concrete demonstration that the tray and
+/// the background loop are independent of one another, satisfying "UI не
+/// нужен для работы collector"/"Collector продолжает работать без
+/// открытого UI").
+#[cfg(not(target_os = "linux"))]
+pub fn run_tray(controller: Arc<dyn AgentController>) -> Result<(), Box<dyn std::error::Error>> {
+    let mut app = build_app(controller)?;
     let event_loop = EventLoop::new()?;
     event_loop.set_control_flow(ControlFlow::Wait);
     event_loop.run_app(&mut app)?;
+    Ok(())
+}
+
+/// Linux-only: `tray-icon`'s Linux backend is GTK/libayatana-appindicator-
+/// based and requires a real, running GTK main loop on the SAME thread
+/// that created the tray/menu (GTK objects are not thread-safe to touch
+/// from elsewhere) — winit's own event loop does not provide this. A
+/// real panic ("GTK has not been initialized. Call `gtk::init` first.")
+/// was hit by actually running this crate for the first time on real
+/// Linux (WSLg) in AG-LNX-003 — this is the fix, not a hypothetical
+/// hardening. No separate thread is spawned for GTK here (unlike
+/// `tray-icon`'s own winit example, which spawns one because IT also
+/// runs a winit event loop with real windows on the main thread
+/// simultaneously) — this crate never creates a winit window at all
+/// (see the module doc comment's ADR 0013 note), so GTK's main loop can
+/// simply run directly on the thread `run_tray` was called from.
+#[cfg(target_os = "linux")]
+pub fn run_tray(controller: Arc<dyn AgentController>) -> Result<(), Box<dyn std::error::Error>> {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    gtk::init()?;
+
+    let app = Rc::new(RefCell::new(build_app(controller)?));
+
+    let timer_app = Rc::clone(&app);
+    glib::source::timeout_add_local(REFRESH_INTERVAL, move || {
+        let mut app = timer_app.borrow_mut();
+        while let Ok(event) = MenuEvent::receiver().try_recv() {
+            if let Some(action) = app.action_by_id.get(&event.id).copied() {
+                if app.handle_action(action) {
+                    gtk::main_quit();
+                    return glib::ControlFlow::Break;
+                }
+            }
+        }
+        app.refresh();
+        glib::ControlFlow::Continue
+    });
+
+    gtk::main();
     Ok(())
 }

@@ -4,7 +4,7 @@ version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "The unified growth-layer-agent.exe: wires windows-collector, normalization, durable-queue, uploader, lifecycle, and ui-shell into one running process — the installable artifact AG-WIN-002 packages."
+description = "The unified growth-layer-agent binary: wires a platform signal collector (windows-collector or linux-collector), normalization, durable-queue, uploader, lifecycle, and ui-shell into one running process — the installable artifact AG-WIN-002/AG-LNX-003 package."
 
 [[bin]]
 name = "growth-layer-agent"
@@ -17,7 +17,13 @@ uploader = { path = "../uploader" }
 normalization = { path = "../normalization" }
 lifecycle = { path = "../lifecycle" }
 ui-shell = { path = "../ui-shell" }
-windows-collector = { path = "../windows-collector" }
+collector-core = { path = "../collector-core" }
 chrono = { version = "0.4", features = ["clock"], default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+[target.'cfg(windows)'.dependencies]
+windows-collector = { path = "../windows-collector" }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+linux-collector = { path = "../linux-collector" }
