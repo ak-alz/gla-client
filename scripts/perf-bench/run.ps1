@@ -292,6 +292,31 @@ if ($budget.cpu_percent_p95_max -and $cpuP95 -gt $budget.cpu_percent_p95_max) {
 if ($budget.disk_write_kb_per_hour_max -and $diskWriteKbPerHour -gt $budget.disk_write_kb_per_hour_max) {
     $violations += "disk writes (projected) ${diskWriteKbPerHour}KB/hour exceeds budget $($budget.disk_write_kb_per_hour_max)KB/hour"
 }
+# `update_download`/`update_apply`'s own exit code was never actually
+# checked here -- an independent review found this: a real regression in
+# `download_with_checksum`/`Staging` (checksum mismatch, panic, disk
+# full) would be completely invisible to this harness, since only RSS/CPU
+# were compared against budgets regardless of whether the real work
+# underneath actually succeeded. Uses the original `$proc` handle, not
+# `Get-Process -Id $proc.Id` (which returns nothing once the process has
+# already exited on its own, as update_bench normally does by this
+# point) -- `$proc.WaitForExit()` first to guarantee `ExitCode` is
+# populated even if the process is still exiting at this exact instant.
+if ($isUpdateBenchScenario) {
+    $proc.WaitForExit(5000) | Out-Null
+    if ($proc.HasExited -and $proc.ExitCode -ne 0) {
+        $violations += "update_bench exited with code $($proc.ExitCode) (expected 0)"
+    } elseif (-not $proc.HasExited) {
+        $violations += "update_bench did not exit within 5s of the scenario window ending"
+    }
+}
+# `upload_burst`'s whole point is draining the seeded backlog -- an
+# independent review found that a real partial-drain regression (records
+# stuck in `leased/`, or quarantined) was never actually asserted against
+# the expected count, only reported informationally.
+if ($Scenario -eq "upload_burst" -and ($queueAcked -ne 40 -or $queueQuarantine -gt 0 -or $queueLeased -gt 0)) {
+    $violations += "upload_burst did not fully drain: acked=$queueAcked (expected 40), quarantine=$queueQuarantine, leased=$queueLeased"
+}
 
 $report = [ordered]@{
     scenario       = $Scenario
