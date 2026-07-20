@@ -3,9 +3,15 @@
 //! site remembering not to. `Debug`/`Display` both redact; the only way
 //! to get the real value out is the explicitly-named `expose()`, a
 //! deliberate, visible-in-a-diff call site any reviewer would notice.
+//! Also zeroizes its backing memory on drop (defense in depth against
+//! a memory scrape/core dump reading a freed-but-not-cleared value) —
+//! note this only clears THIS instance's memory, not any `.clone()`s
+//! made from it, the same documented limitation the `zeroize` crate
+//! itself carries for any owned, clonable type.
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use zeroize::Zeroize;
 
 /// `#[serde(transparent)]` — serializes/deserializes exactly as a bare
 /// string (matching, e.g., an existing `config.json`'s
@@ -29,6 +35,12 @@ impl SecretString {
 
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
+    }
+}
+
+impl Drop for SecretString {
+    fn drop(&mut self) {
+        self.0.zeroize();
     }
 }
 
@@ -83,6 +95,30 @@ mod tests {
 
         let parsed: SecretString = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.expose(), "super-secret-token-abc123");
+    }
+
+    /// Reads the backing buffer's bytes DIRECTLY (via a pointer
+    /// captured while the `String` is still validly allocated, before
+    /// any drop/deallocation happens) to prove `zeroize()` actually
+    /// overwrites the real bytes — not just that `Drop` compiles and
+    /// runs without panicking. Reading memory that's already been
+    /// freed would be real undefined behavior; this test never does
+    /// that — the pointer is only ever read while `secret.0` (and
+    /// therefore its allocation) is still alive and in scope.
+    #[test]
+    fn zeroize_actually_overwrites_the_backing_bytes() {
+        let mut secret = SecretString::new("super-secret-token-abc123");
+        let ptr = secret.0.as_ptr();
+        let original_len = secret.0.len();
+        assert!(original_len > 0);
+
+        secret.0.zeroize();
+
+        let bytes_after = unsafe { std::slice::from_raw_parts(ptr, original_len) };
+        assert!(
+            bytes_after.iter().all(|&b| b == 0),
+            "expected every original byte to be zeroed, got {bytes_after:?}"
+        );
     }
 
     #[test]
