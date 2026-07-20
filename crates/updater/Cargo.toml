@@ -1,0 +1,16 @@
+[package]
+name = "updater"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "AG-UPD-002: background download, checksum verification, atomic staging/apply, and health-check-gated automatic rollback. Platform-agnostic — the actual process replacement (\"controlled restart\") is agent-bin's job, same boundary update-manifest already drew for signing vs. decision logic."
+
+[dependencies]
+update-manifest = { path = "../update-manifest" }
+sha2 = "0.10"
+ureq = "2"
+fs4 = "0.9"
+thiserror = "1"
+
+[dev-dependencies]

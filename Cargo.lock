@@ -886,6 +886,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "fs4"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e8c6b3bd49c37d2aa3f3f2220233b29a7cd23f79d1fe70e5337d25fb390793de"
+dependencies = [
+ "rustix 0.38.44",
+ "windows-sys 0.52.0",
+]
+
+[[package]]
 name = "futures-channel"
 version = "0.3.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3151,6 +3161,17 @@ dependencies = [
  "serde_json",
  "sha2",
  "thiserror 1.0.69",
+]
+
+[[package]]
+name = "updater"
+version = "0.1.0"
+dependencies = [
+ "fs4",
+ "sha2",
+ "thiserror 1.0.69",
+ "update-manifest",
+ "ureq",
 ]
 
 [[package]]
