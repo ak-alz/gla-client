@@ -238,6 +238,26 @@ while (((Get-Date) - $startTime).TotalSeconds -lt $DurationSeconds) {
 $finalProcess = Get-Process -Id $proc.Id -ErrorAction SilentlyContinue
 $writeBytesEnd = if ($finalProcess) { Get-ProcessWriteBytes -Process $finalProcess } else { $writeBytesStart }
 
+# `update_download`/`update_apply`'s own exit code was never actually
+# checked here -- an independent review found this: a real regression in
+# `download_with_checksum`/`Staging` (checksum mismatch, panic, disk
+# full) would be completely invisible to this harness, since only RSS/CPU
+# were compared against budgets regardless of whether the real work
+# underneath actually succeeded. Checked BEFORE `Stop-Process -Force`
+# below -- a follow-up review found that ordering it AFTER made the
+# "still running" branch dead code (Stop-Process's own SIGKILL-equivalent
+# had already forced an exit by the time this ran, so a real hang always
+# reported a fake exit code like -1 instead of a clear timeout message).
+$updateBenchViolation = $null
+if ($isUpdateBenchScenario) {
+    $proc.WaitForExit(5000) | Out-Null
+    if ($proc.HasExited -and $proc.ExitCode -ne 0) {
+        $updateBenchViolation = "update_bench exited with code $($proc.ExitCode) (expected 0)"
+    } elseif (-not $proc.HasExited) {
+        $updateBenchViolation = "update_bench did not exit within 5s of the scenario window ending"
+    }
+}
+
 Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
 if ($Scenario -eq "upload_burst") {
     # `Stop-Job` first hangs here -- the job is blocked inside a
@@ -292,23 +312,8 @@ if ($budget.cpu_percent_p95_max -and $cpuP95 -gt $budget.cpu_percent_p95_max) {
 if ($budget.disk_write_kb_per_hour_max -and $diskWriteKbPerHour -gt $budget.disk_write_kb_per_hour_max) {
     $violations += "disk writes (projected) ${diskWriteKbPerHour}KB/hour exceeds budget $($budget.disk_write_kb_per_hour_max)KB/hour"
 }
-# `update_download`/`update_apply`'s own exit code was never actually
-# checked here -- an independent review found this: a real regression in
-# `download_with_checksum`/`Staging` (checksum mismatch, panic, disk
-# full) would be completely invisible to this harness, since only RSS/CPU
-# were compared against budgets regardless of whether the real work
-# underneath actually succeeded. Uses the original `$proc` handle, not
-# `Get-Process -Id $proc.Id` (which returns nothing once the process has
-# already exited on its own, as update_bench normally does by this
-# point) -- `$proc.WaitForExit()` first to guarantee `ExitCode` is
-# populated even if the process is still exiting at this exact instant.
-if ($isUpdateBenchScenario) {
-    $proc.WaitForExit(5000) | Out-Null
-    if ($proc.HasExited -and $proc.ExitCode -ne 0) {
-        $violations += "update_bench exited with code $($proc.ExitCode) (expected 0)"
-    } elseif (-not $proc.HasExited) {
-        $violations += "update_bench did not exit within 5s of the scenario window ending"
-    }
+if ($updateBenchViolation) {
+    $violations += $updateBenchViolation
 }
 # `upload_burst`'s whole point is draining the seeded backlog -- an
 # independent review found that a real partial-drain regression (records
