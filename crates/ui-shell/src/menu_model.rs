@@ -22,6 +22,10 @@ pub enum MenuAction {
     CheckForUpdates,
     Quit,
     OpenHelp,
+    /// Real device-authorization pairing (added post-launch, AG-REL-003
+    /// follow-up) — only shown when unpaired, mirroring `ToggleActive`'s
+    /// own "only meaningful in one state" pattern below.
+    PairDevice,
 }
 
 /// One menu entry: either a clickable action or a plain informational
@@ -82,6 +86,11 @@ pub fn build_menu(status: &AgentStatus, now: DateTime<Utc>) -> Vec<MenuEntry> {
         entries.push(MenuEntry::action(
             pause_resume_label(status),
             MenuAction::ToggleActive,
+        ));
+    } else {
+        entries.push(MenuEntry::action(
+            "Привязать устройство",
+            MenuAction::PairDevice,
         ));
     }
 
@@ -162,6 +171,25 @@ mod tests {
     }
 
     #[test]
+    fn pair_device_entry_only_appears_when_unpaired() {
+        let unpaired_menu = build_menu(&status(false, false), Utc::now());
+        assert!(
+            unpaired_menu
+                .iter()
+                .any(|e| e.action == Some(MenuAction::PairDevice)),
+            "an unpaired agent must offer a way to pair, not just silently sit there"
+        );
+
+        let paired_menu = build_menu(&status(true, false), Utc::now());
+        assert!(
+            !paired_menu
+                .iter()
+                .any(|e| e.action == Some(MenuAction::PairDevice)),
+            "already-paired agent has nothing to pair again from this menu (see 'Открыть дашборд' -> 'Привязать другое устройство' for re-pairing)"
+        );
+    }
+
+    #[test]
     fn pause_resume_label_reflects_current_state_in_the_menu_itself() {
         let active_menu = build_menu(&status(true, false), Utc::now());
         let paused_menu = build_menu(&status(true, true), Utc::now());
@@ -209,8 +237,9 @@ mod tests {
             MenuAction::CheckForUpdates,
             MenuAction::Quit,
             MenuAction::OpenHelp,
+            MenuAction::PairDevice,
         ];
-        assert_eq!(all_actions.len(), 6, "exactly the actions this task's autopilot entry allows — update this test deliberately, not accidentally, if the list ever grows");
+        assert_eq!(all_actions.len(), 7, "exactly the actions this task's autopilot entry allows (plus PairDevice, added post-launch) — update this test deliberately, not accidentally, if the list ever grows");
     }
 
     #[test]

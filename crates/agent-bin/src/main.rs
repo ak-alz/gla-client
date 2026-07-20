@@ -11,13 +11,16 @@
 //!
 //! Deliberately NOT a full re-implementation of `agent/main.py`'s
 //! business logic (no `config.yaml`-equivalent consent/category-override
-//! schema, no device-pairing flow, no git-commit scanning) — see
-//! config.rs's doc comment for exactly where the line is drawn. What IS
-//! real here:
-//! every wired crate runs its actual, already-independently-reviewed
-//! code, not a stand-in.
+//! schema, no git-commit scanning) — see config.rs's doc comment for
+//! exactly where the line is drawn. Device pairing (`pairing.rs`) WAS
+//! initially out of scope but is now real (AG-REL-003 follow-up): the
+//! tray's "Pair device" action calls the real backend pairing API
+//! itself, the same flow previously only exercisable by hand with curl.
+//! What IS real here: every wired crate runs its actual,
+//! already-independently-reviewed code, not a stand-in.
 
 mod config;
+mod pairing;
 mod paths;
 mod platform;
 
@@ -58,6 +61,12 @@ struct SharedState {
     last_sync: Mutex<Option<chrono::DateTime<Utc>>>,
     paired: AtomicBool,
     dashboard_url: String,
+    backend_url: String,
+    /// Shared, mutable so a real pairing flow (`pairing.rs`) completing
+    /// AFTER startup takes effect on `run_uploader_loop`'s very next
+    /// cycle, without needing a restart — the loop reads this fresh each
+    /// time instead of capturing one fixed value at spawn.
+    agent_token: Mutex<SecretString>,
 }
 
 impl SharedState {
@@ -68,6 +77,7 @@ impl SharedState {
 
 struct Controller {
     state: Arc<SharedState>,
+    log: Arc<RotatingLog>,
 }
 
 impl AgentController for Controller {
@@ -96,6 +106,68 @@ impl AgentController for Controller {
     fn help_url(&self) -> String {
         "https://github.com/ak-alz/pts-agent".to_string()
     }
+
+    fn pair_device(&self) {
+        if self.state.paired.load(Ordering::Relaxed) {
+            return; // already paired -- "Pair device" isn't even shown then, but no-op if it somehow fires
+        }
+        let state = Arc::clone(&self.state);
+        let log = Arc::clone(&self.log);
+        std::thread::spawn(move || run_pairing_flow(state, log));
+    }
+}
+
+/// Real device-authorization pairing, triggered from the tray
+/// (`Controller::pair_device`) — calls `/v1/agent/pair/start` itself,
+/// opens the browser straight to the confirmation page with the
+/// `user_code` prefilled (`ActivatePage.tsx`'s own `?code=` handling),
+/// then polls until the human confirms or the code expires. Runs on its
+/// own thread (spawned by the caller) since it blocks on network I/O and
+/// sleeps between polls — must never run on the tray's own event-loop
+/// thread. The code is also written to `agent.log` — the fallback for
+/// "the browser didn't open" or "I closed the tab," since the tray has
+/// no window of its own to display it in (ADR 0013).
+fn run_pairing_flow(state: Arc<SharedState>, log: Arc<RotatingLog>) {
+    let start = match pairing::start(&state.backend_url) {
+        Ok(start) => start,
+        Err(_) => {
+            let _ = log.append("pairing failed to start (backend unreachable?) -- try again from the tray menu");
+            return;
+        }
+    };
+    let _ = log.append(&format!(
+        "pairing code: {} (valid {} minutes) -- opening browser to confirm; if it didn't open, go to the dashboard's Device page and enter this code",
+        start.user_code,
+        start.expires_in_seconds / 60
+    ));
+
+    let activate_url = format!(
+        "{}/activate?code={}",
+        state.dashboard_url.trim_end_matches('/'),
+        start.user_code
+    );
+    let _ = ui_shell::open_url(&activate_url);
+
+    let deadline = std::time::Instant::now() + Duration::from_secs(start.expires_in_seconds);
+    while std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_secs(start.poll_interval_seconds));
+        match pairing::poll(&state.backend_url, &start.device_code) {
+            Ok(pairing::PollOutcome::Confirmed { agent_token }) => {
+                let token = SecretString::new(agent_token);
+                let _ = config::persist_agent_token(&token);
+                *state.agent_token.lock().unwrap() = token;
+                state.paired.store(true, Ordering::SeqCst);
+                let _ = log.append("pairing confirmed");
+                return;
+            }
+            Ok(pairing::PollOutcome::Pending) => continue,
+            Ok(pairing::PollOutcome::Gone) | Err(_) => {
+                let _ = log.append("pairing code expired or was never confirmed -- try again from the tray menu");
+                return;
+            }
+        }
+    }
+    let _ = log.append("pairing code expired without confirmation");
 }
 
 fn autostart_handle() -> Autostart {
@@ -214,28 +286,33 @@ fn run_uploader_loop(
     state: Arc<SharedState>,
     queue: Arc<DurableQueue>,
     backend_url: String,
-    agent_token: SecretString,
     stop: Arc<AtomicBool>,
 ) {
-    // The one, deliberate, visible-in-a-diff call site where the token
-    // leaves its `SecretString` wrapper — `UreqTransport` needs a plain
-    // `String` to build its request header (`transport.rs`'s own doc
-    // comment already documents why it never logs that value further).
-    let transport = UreqTransport::new(
-        backend_url,
-        agent_token.expose().to_string(),
-        Duration::from_secs(10),
-    );
-    let uploader = Uploader::new(
-        &transport,
-        UploaderConfig {
-            batch_size: 20,
-            backoff: BackoffConfig::default(),
-        },
-    );
     let mut backoff_state = BackoffState::new();
 
     while !stop.load(Ordering::Relaxed) {
+        // Rebuilt every cycle (cheap -- no I/O until a request is
+        // actually sent) so a token obtained via a real-time pairing flow
+        // (`pairing.rs`) takes effect on the very next cycle, instead of
+        // needing a restart. The one, deliberate, visible-in-a-diff call
+        // site where the token leaves its `SecretString` wrapper —
+        // `UreqTransport` needs a plain `String` to build its request
+        // header (`transport.rs`'s own doc comment already documents why
+        // it never logs that value further).
+        let agent_token = state.agent_token.lock().unwrap().clone();
+        let transport = UreqTransport::new(
+            backend_url.clone(),
+            agent_token.expose().to_string(),
+            Duration::from_secs(10),
+        );
+        let uploader = Uploader::new(
+            &transport,
+            UploaderConfig {
+                batch_size: 20,
+                backoff: BackoffConfig::default(),
+            },
+        );
+
         let outcome = uploader.run_once(&queue, &mut backoff_state);
         state
             .pending_count
@@ -345,6 +422,8 @@ fn main() {
         last_sync: Mutex::new(None),
         paired: AtomicBool::new(!cfg.agent_token.is_empty()),
         dashboard_url: cfg.dashboard_url.clone(),
+        backend_url: cfg.backend_url.clone(),
+        agent_token: Mutex::new(cfg.agent_token.clone()),
     });
 
     let stop = Arc::new(AtomicBool::new(false));
@@ -361,8 +440,7 @@ fn main() {
         let queue = Arc::clone(&queue);
         let stop = Arc::clone(&stop);
         let backend_url = cfg.backend_url.clone();
-        let agent_token = cfg.agent_token.clone();
-        std::thread::spawn(move || run_uploader_loop(state, queue, backend_url, agent_token, stop))
+        std::thread::spawn(move || run_uploader_loop(state, queue, backend_url, stop))
     };
     let power_thread = {
         let state = Arc::clone(&state);
@@ -392,6 +470,7 @@ fn main() {
     let _ = log.append("agent started");
     let controller = Arc::new(Controller {
         state: Arc::clone(&state),
+        log: Arc::clone(&log),
     });
     let _ = run_tray(controller);
 

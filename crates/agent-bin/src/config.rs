@@ -9,7 +9,12 @@
 //! defaults) — a real deployment is expected to write a real
 //! `config.json` into the data directory (see `paths::data_dir`), the
 //! same way `agent/core/pairing.py` writes `exports/device_credentials.json`
-//! for the Python MVP today. No pairing UI/flow is implemented here.
+//! for the Python MVP today.
+//!
+//! The real device-authorization pairing flow (`pairing.rs`) persists a
+//! newly-obtained `agent_token` back into this same file via
+//! [`persist_agent_token`] — read-modify-write, preserving whatever
+//! `backend_url`/`dashboard_url` the file already had.
 
 use crate::paths;
 use secrets::SecretString;
@@ -66,6 +71,26 @@ pub fn load() -> Config {
     }
 }
 
+/// Writes a newly-obtained `agent_token` back into `config.json`,
+/// preserving whatever `backend_url`/`dashboard_url` are already there —
+/// re-reads the current file (via [`load`], so a missing/corrupt file is
+/// still handled the same defensive way) rather than assuming the
+/// in-memory `Config` this process started with is still accurate, then
+/// writes the whole struct back. Write-then-rename (same pattern
+/// `DeviceId::create_and_persist` already uses) so a crash mid-write
+/// never leaves a half-written `config.json` behind.
+pub fn persist_agent_token(agent_token: &SecretString) -> std::io::Result<()> {
+    let mut current = load();
+    current.agent_token = agent_token.clone();
+    let path = paths::data_dir().join("config.json");
+    let tmp_path = path.with_extension("json.tmp");
+    let json = serde_json::to_string_pretty(&current)
+        .expect("Config serialization is infallible: no non-finite floats, all fields are plain owned data");
+    std::fs::write(&tmp_path, json)?;
+    std::fs::rename(&tmp_path, &path)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -83,6 +108,55 @@ mod tests {
         let config: Config = serde_json::from_str(r#"{"agent_token": "abc123"}"#).unwrap();
         assert_eq!(config.agent_token.expose(), "abc123");
         assert_eq!(config.backend_url, "http://localhost:8000");
+    }
+
+    #[test]
+    fn persist_agent_token_round_trips_and_preserves_other_fields() {
+        // A real temp data dir, never the real user's -- overrides the
+        // same env var `paths::data_dir()` reads, restored immediately
+        // after so no other test in this binary sees it changed.
+        let scratch = std::env::temp_dir().join(format!(
+            "gla-config-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&scratch).unwrap();
+        #[cfg(windows)]
+        let env_var = "LOCALAPPDATA";
+        #[cfg(not(windows))]
+        let env_var = "XDG_DATA_HOME";
+        let previous = std::env::var_os(env_var);
+        std::env::set_var(env_var, &scratch);
+
+        let seeded = Config {
+            backend_url: "https://api.example.test".to_string(),
+            agent_token: SecretString::new(""),
+            dashboard_url: "https://app.example.test".to_string(),
+        };
+        // data_dir() only exists after main() creates it normally --
+        // this test creates it itself first, the same way main() does.
+        std::fs::create_dir_all(paths::data_dir()).unwrap();
+        std::fs::write(
+            paths::data_dir().join("config.json"),
+            serde_json::to_string(&seeded).unwrap(),
+        )
+        .unwrap();
+
+        persist_agent_token(&SecretString::new("real-token-from-real-pairing")).unwrap();
+        let reloaded = load();
+
+        match previous {
+            Some(value) => std::env::set_var(env_var, value),
+            None => std::env::remove_var(env_var),
+        }
+        std::fs::remove_dir_all(&scratch).ok();
+
+        assert_eq!(reloaded.agent_token.expose(), "real-token-from-real-pairing");
+        assert_eq!(reloaded.backend_url, "https://api.example.test");
+        assert_eq!(reloaded.dashboard_url, "https://app.example.test");
     }
 
     #[test]

@@ -51,8 +51,10 @@ dependencies = [
  "serde",
  "serde_json",
  "signal-hook",
+ "thiserror 1.0.69",
  "ui-shell",
  "uploader",
+ "ureq",
  "windows-collector",
 ]
 

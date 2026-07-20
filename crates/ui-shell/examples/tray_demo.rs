@@ -60,6 +60,10 @@ impl AgentController for DemoController {
     fn help_url(&self) -> String {
         "https://github.com/ak-alz/pts-agent".to_string()
     }
+
+    fn pair_device(&self) {
+        println!("pair_device: demo controller is always 'paired', nothing to do");
+    }
 }
 
 fn main() {

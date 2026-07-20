@@ -22,6 +22,11 @@ secrets = { path = "../secrets" }
 chrono = { version = "0.4", features = ["clock"], default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Real device-authorization pairing (pairing.rs) -- the same minimal,
+# blocking HTTP client uploader/updater already use (no async runtime,
+# ADR 0013).
+ureq = "2"
+thiserror = "1"
 
 [target.'cfg(windows)'.dependencies]
 windows-collector = { path = "../windows-collector" }

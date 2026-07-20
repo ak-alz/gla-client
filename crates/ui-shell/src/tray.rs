@@ -40,6 +40,11 @@ pub trait AgentController: Send + Sync + 'static {
     fn dashboard_url(&self) -> String;
     fn diagnostics_url(&self) -> String;
     fn help_url(&self) -> String;
+    /// Real device-authorization pairing (added post-launch). Must
+    /// return promptly — implementations spawn their own thread for the
+    /// actual network calls/polling, never blocking this call site,
+    /// which runs on the tray's own event-loop thread.
+    fn pair_device(&self);
 }
 
 /// How often the menu's time-sensitive text (mainly "last sync: N minutes
@@ -152,6 +157,10 @@ impl App {
                 // Disabled in the menu until AG-UPD-001+ exist — a click
                 // should be unreachable, but if one somehow arrives, doing
                 // nothing is the safe default, not a crash or a fake success.
+                false
+            }
+            MenuAction::PairDevice => {
+                self.controller.pair_device();
                 false
             }
             MenuAction::Quit => true,
