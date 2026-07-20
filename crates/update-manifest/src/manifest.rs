@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 pub enum Channel {
     Stable,
     Beta,
+    Dev,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

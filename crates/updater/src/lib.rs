@@ -25,13 +25,30 @@
 //!    downloaded artifact simply waits if not yet safe.
 //! 4. `health::apply_with_health_check` — stage, ask the caller's
 //!    `HealthCheck`, commit or automatically roll back.
+//!
+//! `AG-UPD-003` adds `telemetry` (a structurally closed, privacy-safe
+//! update-outcome report — "operational telemetry only, no activity
+//! payload") and `diagnostics` (a plain-data update-status summary for
+//! a future tray/diagnostics screen, same shape `ui-shell::status`
+//! already uses for the rest of the agent's own status line). Staged
+//! rollout itself (1/5/20/50/100%, halting a rollout, targeting a
+//! rollback at an affected version) is already fully implemented by
+//! `update_manifest::rollout`/`decision` from AG-UPD-001 — an operator
+//! halts a rollout or targets a rollback by publishing a new SIGNED
+//! MANIFEST, not by agent-side code; see
+//! `docs/02_ARCHITECTURE/UPDATE_ROLLOUT_RUNBOOK.md` for the concrete
+//! operational procedure this crate's already-tested primitives
+//! support.
 
+pub mod diagnostics;
 pub mod disk_space;
 pub mod download;
 pub mod health;
 pub mod restart_policy;
 pub mod staging;
+pub mod telemetry;
 
+pub use diagnostics::UpdateDiagnostics;
 pub use disk_space::has_enough_free_space;
 pub use download::{
     download_with_checksum, DownloadConfig, DownloadError, DownloadTransport, UreqDownloadTransport,
@@ -39,3 +56,4 @@ pub use download::{
 pub use health::{apply_with_health_check, ApplyOutcome, HealthCheck};
 pub use restart_policy::{RestartContext, RestartPolicy};
 pub use staging::{Staging, StagingError};
+pub use telemetry::{UpdateOutcome, UpdateTelemetryReport};
