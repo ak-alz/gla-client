@@ -1,0 +1,30 @@
+[package]
+name = "macos-collector"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "AG-MAC-001 draft macOS collector — UNVERIFIED, never compiled or run (no macOS hardware available in the session that wrote it). See docs/02_ARCHITECTURE/AGENT_MACOS_CAPABILITY_MATRIX.md and this crate's lib.rs doc comment before relying on anything here."
+
+[dependencies]
+collector-core = { path = "../collector-core" }
+lifecycle = { path = "../lifecycle" }
+
+# objc2-* (not the older, less actively maintained cocoa/core-foundation-rs
+# crates — see AGENT_MACOS_CAPABILITY_MATRIX.md's research note) — versions
+# below confirmed to be the real, current latest-stable releases via
+# crates.io's own API at the time this was written (objc2 0.6.4,
+# objc2-app-kit/objc2-core-graphics/objc2-core-foundation 0.3.2), so
+# `cargo build --workspace` resolves a real dependency graph on every
+# platform (Cargo resolves target-specific deps for the lockfile
+# regardless of the building platform) — but their exact API SURFACE
+# (function/method names this crate's `todo!()` bodies describe) was
+# never compiled against in this session; only their existence and
+# version were verified, not their usage.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = "0.3"
+objc2-core-graphics = "0.3"
+objc2-core-foundation = "0.3"
+
+[dev-dependencies]
