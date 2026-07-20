@@ -36,10 +36,27 @@ pub struct Staging {
 }
 
 impl Staging {
+    /// `binary_name` is expected to be a fixed, code-chosen constant
+    /// (e.g. `"growth-layer-agent"`), never derived from anything
+    /// external — enforced here, not just assumed, since
+    /// `install_dir.join(binary_name)` would otherwise let a `..`
+    /// component or an absolute path escape `install_dir` entirely
+    /// (independent review flagged this as unexercised-but-real; no
+    /// caller passes anything but a hardcoded constant today, and this
+    /// keeps it that way structurally rather than by convention alone).
     pub fn new(install_dir: impl Into<PathBuf>, binary_name: impl Into<String>) -> Self {
+        let binary_name = binary_name.into();
+        assert!(
+            !binary_name.is_empty()
+                && !binary_name.contains('/')
+                && !binary_name.contains('\\')
+                && binary_name != "."
+                && binary_name != "..",
+            "Staging::new: binary_name must be a plain file name, not a path: {binary_name:?}"
+        );
         Self {
             install_dir: install_dir.into(),
-            binary_name: binary_name.into(),
+            binary_name,
         }
     }
 
@@ -118,6 +135,23 @@ impl Staging {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[should_panic(expected = "binary_name must be a plain file name")]
+    fn new_rejects_a_binary_name_containing_a_path_separator() {
+        Staging::new("/some/install/dir", "../escape/agent.bin");
+    }
+
+    #[test]
+    #[should_panic(expected = "binary_name must be a plain file name")]
+    fn new_rejects_a_bare_dot_dot_binary_name() {
+        Staging::new("/some/install/dir", "..");
+    }
+
+    #[test]
+    fn new_accepts_an_ordinary_plain_file_name() {
+        let _ = Staging::new("/some/install/dir", "growth-layer-agent");
+    }
 
     fn temp_dir(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
