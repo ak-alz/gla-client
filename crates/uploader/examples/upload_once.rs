@@ -6,7 +6,11 @@
 //! "upload resumes after reboot" (via the durable queue underneath) against
 //! a live server, not just a hand-maintained mock.
 //!
-//! Usage: `upload_once <queue_dir> <endpoint_url> <agent_token>`
+//! Usage: `upload_once <queue_dir> <backend_url> <agent_token>`
+//! `backend_url` is the base origin (e.g. `http://localhost:8000`) --
+//! `UreqTransport::new` appends `/v1/ingest/productivity-record` itself
+//! (AG-REL-003 fix; this tool's own arg used to need the full path before
+//! that fix existed).
 use event_contract::{
     Consent, DeviceId, Envelope, InputActivityEvents, NewEnvelope, Payload, Signals,
 };

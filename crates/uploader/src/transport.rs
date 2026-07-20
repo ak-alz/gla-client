@@ -59,8 +59,22 @@ pub struct UreqTransport {
 }
 
 impl UreqTransport {
-    pub fn new(endpoint: String, agent_token: String, request_timeout: Duration) -> Self {
+    /// `backend_url` is the base origin (e.g. `http://localhost:8000`), NOT
+    /// the full ingest path — this appends `/v1/ingest/productivity-record`
+    /// itself, matching the Python MVP's own `agent/core/uploader.py`
+    /// (`backend_url.rstrip("/") + "/v1/ingest/productivity-record"`)
+    /// exactly. A real end-to-end run against the actual backend (AG-REL-003)
+    /// found this crate previously posted to the bare `backend_url` with no
+    /// path at all — every real upload attempt silently 404'd and backed
+    /// off forever, a real functional regression from the Python MVP's own
+    /// behavior that no unit test (all built on a mocked `UploadTransport`)
+    /// could have caught, only a genuine live request against a real server.
+    pub fn new(backend_url: String, agent_token: String, request_timeout: Duration) -> Self {
         let agent = ureq::AgentBuilder::new().timeout(request_timeout).build();
+        let endpoint = format!(
+            "{}/v1/ingest/productivity-record",
+            backend_url.trim_end_matches('/')
+        );
         UreqTransport {
             agent,
             endpoint,
