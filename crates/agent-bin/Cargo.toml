@@ -36,3 +36,6 @@ linux-collector = { path = "../linux-collector" }
 # raw signal handler via a self-pipe, so there's no async-signal-safety
 # tightrope to walk here).
 signal-hook = "0.3"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+macos-collector = { path = "../macos-collector" }

@@ -45,6 +45,7 @@ dependencies = [
  "event-contract",
  "lifecycle",
  "linux-collector",
+ "macos-collector",
  "normalization",
  "secrets",
  "serde",

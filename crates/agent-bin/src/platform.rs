@@ -33,3 +33,20 @@ pub use linux_collector::NativeLoop;
 pub fn new_collector() -> linux_collector::LinuxSignalCollector {
     linux_collector::LinuxSignalCollector::new(120.0)
 }
+
+/// AG-MAC-002 wires `macos-collector` in here the same way AG-LNX-003
+/// wired `linux_collector` above -- but unlike the other two branches,
+/// every real API call inside `macos-collector` is still a `todo!()`
+/// stub (AG-MAC-001, written and never compiled without real macOS
+/// hardware). Compiling `agent-bin` for macOS is therefore expected to
+/// build but panic at runtime the first time the collector/native loop
+/// actually run -- this wiring exists so the architecture is complete
+/// and the remaining work for whoever has real hardware is filling in
+/// `macos-collector`'s bodies, not also rebuilding this integration.
+#[cfg(target_os = "macos")]
+pub use macos_collector::NativeLoop;
+
+#[cfg(target_os = "macos")]
+pub fn new_collector() -> macos_collector::MacosSignalCollector {
+    macos_collector::MacosSignalCollector::new()
+}

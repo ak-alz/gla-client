@@ -16,22 +16,31 @@ use std::path::PathBuf;
 /// growth-layer-agent` (falling back to `~/.local/share/growth-layer-agent`
 /// per the XDG Base Directory spec, the standard convention already used
 /// for `~/.config/systemd/user/` in `lifecycle::Autostart`'s Linux path)
-/// on Linux — never inside the install directory, never touched by the
-/// installer at all (uninstall does not remove it by default — see each
-/// installer script for that decision).
+/// on Linux, `~/Library/Application Support/GrowthLayerAgent` on macOS
+/// (the platform-idiomatic location — macOS does not follow the XDG
+/// spec and does not set `$XDG_DATA_HOME` by default, so treating it as
+/// "just Linux" would have silently put this agent's data under
+/// `~/.local/share` on a stock Mac, a working but non-idiomatic
+/// location; added by AG-MAC-002, never verified on real hardware like
+/// the rest of this platform's code) — never inside the install
+/// directory, never touched by the installer at all (uninstall does not
+/// remove it by default — see each installer script for that decision).
 pub fn data_dir() -> PathBuf {
     #[cfg(windows)]
     let base = std::env::var_os("LOCALAPPDATA").map(PathBuf::from);
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    let base = std::env::var_os("HOME")
+        .map(|home| PathBuf::from(home).join("Library/Application Support"));
+    #[cfg(not(any(windows, target_os = "macos")))]
     let base = std::env::var_os("XDG_DATA_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/share")));
 
     let base = base.unwrap_or_else(std::env::temp_dir); // extremely defensive fallback only
 
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     let name = "GrowthLayerAgent";
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "macos")))]
     let name = "growth-layer-agent";
 
     base.join(name)

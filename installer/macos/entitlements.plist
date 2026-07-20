@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+AG-MAC-002 — minimal hardened-runtime entitlements. Deliberately empty
+of anything beyond what hardened runtime itself requires: no
+com.apple.security.cs.disable-library-validation, no
+com.apple.security.cs.allow-jit, no com.apple.security.automation.apple-events.
+Accessibility and input-monitoring (the two permissions
+AGENT_MACOS_CAPABILITY_MATRIX.md identifies this agent as needing) are
+TCC prompts triggered by the API calls themselves at runtime, not
+entitlements requested here.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <false/>
+</dict>
+</plist>

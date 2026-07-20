@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+AG-MAC-002 — app bundle metadata for GrowthLayerAgent.app. Written and
+never validated against a real `codesign`/Gatekeeper/notarization pass
+(no macOS hardware in this environment — same honest limitation as
+AG-MAC-001's collector skeleton). Bundle ID/name match the app-name
+convention agent-bin/src/main.rs already uses for Windows/Linux
+(AUTOSTART_APP_NAME = "GrowthLayerAgent").
+
+LSUIElement=1 is the one deliberate, load-bearing choice here: it marks
+this as an agent (no Dock icon, no menu bar app switcher entry) since
+`ui-shell::run_tray` is the only UI surface (a status-bar item), the
+same "background agent, not a foreground app" shape the Windows/Linux
+installers already give this binary.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>GrowthLayerAgent</string>
+    <key>CFBundleDisplayName</key>
+    <string>Growth Layer Agent</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.growthlayer.agent</string>
+    <key>CFBundleVersion</key>
+    <string>0.1.0</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.1.0</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleExecutable</key>
+    <string>growth-layer-agent</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon.icns</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>11.0</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSHumanReadableCopyright</key>
+    <string>Growth Layer</string>
+    <!--
+    Permission-usage strings: `AGENT_MACOS_CAPABILITY_MATRIX.md` (AG-MAC-001)
+    identifies Accessibility (for the active-window/input-aggregate source)
+    as the one permission this agent needs — requested via the system
+    Accessibility prompt (TCC), not an Info.plist usage-description key
+    (Accessibility has no corresponding NS*UsageDescription key the way
+    camera/microphone/location do), so none is declared here. No
+    screen-recording permission is requested, matching the capability
+    matrix's explicit "no screen content read" constraint.
+    -->
+</dict>
+</plist>

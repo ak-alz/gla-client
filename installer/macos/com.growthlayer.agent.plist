@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+AG-MAC-002 — the real login-item mechanism for macOS: a per-user
+LaunchAgent, installed to ~/Library/LaunchAgents/ by build_app_bundle.sh
+below (NOT a Login Items entry via System Settings, which has no stable
+scriptable API since macOS Ventura's replacement of the old
+SMLoginItemSetEnabled approach -- LaunchAgents remain the documented,
+scriptable, per-user mechanism). Deliberately NOT a LaunchDaemon: this
+agent has no privileged work to do and must never require an admin
+password to install, matching the "no admin required unless justified"
+principle AG-WIN-002's installer already established for Windows.
+
+RunAtLoad + KeepAlive(false, not true): starts once at login, does NOT
+restart automatically if killed -- `lifecycle::CrashMarker` (already
+implemented, cross-platform) is this agent's own crash-detection
+mechanism; a `launchd`-level auto-restart would race with it and is
+unverified (never tested here, no macOS hardware).
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.growthlayer.agent</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Applications/GrowthLayerAgent.app/Contents/MacOS/growth-layer-agent</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <false/>
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>
