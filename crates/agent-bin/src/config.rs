@@ -12,6 +12,7 @@
 //! for the Python MVP today. No pairing UI/flow is implemented here.
 
 use crate::paths;
+use secrets::SecretString;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -25,9 +26,12 @@ pub struct Config {
     /// already-handled `CycleOutcome::Unauthorized` from the backend
     /// rather than crash (see `uploader::CycleOutcome`, from AG-005),
     /// so an unpaired agent still collects and queues locally without
-    /// erroring.
+    /// erroring. `SecretString` (AG-SEC-001) — `#[derive(Debug)]` on
+    /// this struct can never accidentally print the real token value;
+    /// serializes transparently as a bare string, so `config.json`'s
+    /// on-disk shape is unchanged.
     #[serde(default)]
-    pub agent_token: String,
+    pub agent_token: SecretString,
     #[serde(default = "default_dashboard_url")]
     pub dashboard_url: String,
 }
@@ -44,7 +48,7 @@ impl Default for Config {
     fn default() -> Self {
         Config {
             backend_url: default_backend_url(),
-            agent_token: String::new(),
+            agent_token: SecretString::new(""),
             dashboard_url: default_dashboard_url(),
         }
     }
@@ -77,7 +81,15 @@ mod tests {
     #[test]
     fn deserializes_partial_json_filling_in_defaults() {
         let config: Config = serde_json::from_str(r#"{"agent_token": "abc123"}"#).unwrap();
-        assert_eq!(config.agent_token, "abc123");
+        assert_eq!(config.agent_token.expose(), "abc123");
         assert_eq!(config.backend_url, "http://localhost:8000");
+    }
+
+    #[test]
+    fn debug_formatting_of_the_whole_config_never_reveals_the_real_token() {
+        let config: Config =
+            serde_json::from_str(r#"{"agent_token": "super-secret-abc123"}"#).unwrap();
+        let formatted = format!("{config:?}");
+        assert!(!formatted.contains("super-secret-abc123"));
     }
 }

@@ -31,6 +31,7 @@ use lifecycle::{
 };
 use normalization::{BucketAccumulator, Tick};
 use platform::{new_collector, NativeLoop};
+use secrets::SecretString;
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -213,10 +214,18 @@ fn run_uploader_loop(
     state: Arc<SharedState>,
     queue: Arc<DurableQueue>,
     backend_url: String,
-    agent_token: String,
+    agent_token: SecretString,
     stop: Arc<AtomicBool>,
 ) {
-    let transport = UreqTransport::new(backend_url, agent_token, Duration::from_secs(10));
+    // The one, deliberate, visible-in-a-diff call site where the token
+    // leaves its `SecretString` wrapper — `UreqTransport` needs a plain
+    // `String` to build its request header (`transport.rs`'s own doc
+    // comment already documents why it never logs that value further).
+    let transport = UreqTransport::new(
+        backend_url,
+        agent_token.expose().to_string(),
+        Duration::from_secs(10),
+    );
     let uploader = Uploader::new(
         &transport,
         UploaderConfig {
@@ -292,6 +301,13 @@ fn main() {
 
     std::fs::create_dir_all(paths::data_dir()).expect("create data dir");
     std::fs::create_dir_all(paths::log_dir()).expect("create log dir");
+    // "Local DB permissions" (AG-SEC-001) — the data dir holds
+    // `device_id.json`/`config.json`/the queue, none of which any
+    // other local account should be able to read. Best-effort: a
+    // pre-existing dir from before this hardening existed keeps
+    // whatever permissions it already had if this call fails, rather
+    // than blocking startup over it.
+    let _ = secrets::restrict_to_current_user_only(&paths::data_dir());
 
     let log =
         Arc::new(RotatingLog::new(paths::log_dir(), "agent.log", 1_000_000, 5).expect("open log"));
