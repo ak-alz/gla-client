@@ -1,0 +1,16 @@
+# IDE / OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+
+# Rust — build output, не исходники
+target/
+
+# Installer build output (Windows ISCC, .deb/.rpm build.sh, macOS app
+# bundle/dmg scripts) — generated, not source artifacts. Policy: binaries
+# are never committed, see DOWNLOADS.md for build instructions.
+dist/
+
+# Личный конфиг агента, если кто-то захочет переопределить дефолтный без коммита
+config.local.yaml

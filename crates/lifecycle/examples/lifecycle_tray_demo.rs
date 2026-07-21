@@ -35,7 +35,7 @@ impl AgentController for DemoController {
         "http://localhost:5173/history".to_string()
     }
     fn help_url(&self) -> String {
-        "https://github.com/ak-alz/pts-agent".to_string()
+        "https://github.com/ak-alz/gla-client".to_string()
     }
     fn pair_device(&self) {}
 }
