@@ -75,50 +75,86 @@ fn make_icon(active: bool) -> Icon {
 
 struct BuiltMenu {
     menu: Menu,
+    // Kept (not dropped after construction) so a later `refresh()` can
+    // patch each item's text in place via `set_text` — see `App::refresh`'s
+    // doc comment for the real, user-reported bug this exists to avoid.
+    items: Vec<MenuItem>,
     action_by_id: HashMap<MenuId, MenuAction>,
 }
 
 fn build_native_menu(entries: &[MenuEntry]) -> BuiltMenu {
     let menu = Menu::new();
+    let mut items = Vec::with_capacity(entries.len());
     let mut action_by_id = HashMap::new();
 
     for entry in entries {
-        match entry.action {
-            Some(action) => {
-                let item = MenuItem::new(&entry.label, entry.enabled, None);
-                action_by_id.insert(item.id().clone(), action);
-                let _ = menu.append(&item);
-            }
-            None => {
-                // An informational line — native menu APIs don't have a
-                // dedicated non-interactive item type, so a disabled
-                // MenuItem is the standard idiom (matches how Windows/macOS
-                // native apps show a "current status" line at the top of
-                // a tray menu: present, labeled, but not clickable).
-                let item = MenuItem::new(&entry.label, false, None);
-                let _ = menu.append(&item);
-            }
+        // Both actionable and informational entries are the same native
+        // `MenuItem` (native menu APIs have no dedicated non-interactive
+        // item type) — a disabled one is the standard idiom for a
+        // "current status" line. Only actionable ones get an
+        // `action_by_id` entry; both get their handle kept in `items` so
+        // `refresh()` can update their text later.
+        let item = MenuItem::new(&entry.label, entry.enabled, None);
+        if let Some(action) = entry.action {
+            action_by_id.insert(item.id().clone(), action);
         }
+        let _ = menu.append(&item);
+        items.push(item);
     }
     let _ = menu.append(&PredefinedMenuItem::separator());
 
-    BuiltMenu { menu, action_by_id }
+    BuiltMenu { menu, items, action_by_id }
 }
 
 struct App {
     controller: Arc<dyn AgentController>,
     tray: TrayIcon,
+    items: Vec<MenuItem>,
+    // (action, enabled) per entry, in order — the STRUCTURAL shape of the
+    // currently-displayed menu, as opposed to its text. Compared against
+    // on each refresh to decide whether the native menu can be patched in
+    // place or must be rebuilt from scratch (see `refresh()`'s doc comment).
+    entry_shape: Vec<(Option<MenuAction>, bool)>,
     action_by_id: HashMap<MenuId, MenuAction>,
     last_status: AgentStatus,
 }
 
 impl App {
+    /// Real, user-reported bug this avoids: the periodic 5-second refresh
+    /// used to call `set_menu` with a BRAND NEW `Menu` (fresh native
+    /// `MenuId`s) every single tick, unconditionally. If a user opened the
+    /// tray menu and took longer than one tick to click something (utterly
+    /// ordinary — reading "Последняя синхронизация: N назад" before
+    /// deciding what to click), the periodic refresh silently replaced the
+    /// menu-and-ids UNDERNEATH the still-visible native popup. The click
+    /// then arrived tagged with an id from the now-discarded menu, missed
+    /// every entry in `self.action_by_id` (which had already moved on to
+    /// the new ids), and did nothing — exactly "кнопки меню перестали
+    /// что-то делать вообще".
+    ///
+    /// Fix: only rebuild (and mint new ids) when the menu's actual
+    /// STRUCTURE changed (an item was added/removed/enabled toggled —
+    /// e.g. a pairing completing, "Приостановить"<->"Возобновить" does NOT
+    /// count, only its text does). Otherwise patch each existing item's
+    /// text in place via `set_text`, keeping the same ids a click made
+    /// against the on-screen menu at any point will still resolve against.
     fn refresh(&mut self) {
         let status = self.controller.status();
         let entries = build_menu(&status, chrono::Utc::now());
-        let built = build_native_menu(&entries);
-        self.tray.set_menu(Some(Box::new(built.menu)));
-        self.action_by_id = built.action_by_id;
+        let shape: Vec<(Option<MenuAction>, bool)> =
+            entries.iter().map(|e| (e.action, e.enabled)).collect();
+
+        if shape == self.entry_shape {
+            for (item, entry) in self.items.iter().zip(entries.iter()) {
+                item.set_text(&entry.label);
+            }
+        } else {
+            let built = build_native_menu(&entries);
+            self.tray.set_menu(Some(Box::new(built.menu)));
+            self.items = built.items;
+            self.action_by_id = built.action_by_id;
+            self.entry_shape = shape;
+        }
 
         let is_active = status.paired && !status.is_paused;
         let was_active = self.last_status.paired && !self.last_status.is_paused;
@@ -205,6 +241,7 @@ fn build_app(controller: Arc<dyn AgentController>) -> Result<App, Box<dyn std::e
     let is_active = initial_status.paired && !initial_status.is_paused;
 
     let entries = build_menu(&initial_status, chrono::Utc::now());
+    let entry_shape = entries.iter().map(|e| (e.action, e.enabled)).collect();
     let built = build_native_menu(&entries);
 
     let tray = TrayIconBuilder::new()
@@ -216,6 +253,8 @@ fn build_app(controller: Arc<dyn AgentController>) -> Result<App, Box<dyn std::e
     Ok(App {
         controller,
         tray,
+        items: built.items,
+        entry_shape,
         action_by_id: built.action_by_id,
         last_status: initial_status,
     })

@@ -10,7 +10,7 @@
 //! AG-REL-003's own end-to-end pass, just triggered from the tray instead
 //! of by hand with curl.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 #[derive(Debug, Deserialize)]
@@ -45,15 +45,38 @@ fn agent() -> ureq::Agent {
         .build()
 }
 
+#[derive(Serialize)]
+struct PairStartRequest {
+    device_label: Option<String>,
+}
+
+/// The machine's hostname — the only thing the agent can know about
+/// itself without any config the human has to fill in. Purely a display
+/// label (see `PairStartRequest` on the backend side): a human still
+/// renames it in-place via `PATCH /v1/agent/pair/{device_id}` if the raw
+/// hostname isn't meaningful to them ("LAPTOP-7F3K2Q"). `None` (not an
+/// empty string) if the OS call itself fails, so the backend's existing
+/// "no label yet" handling applies instead of storing a blank label.
+fn local_device_label() -> Option<String> {
+    let raw = gethostname::gethostname().to_string_lossy().into_owned();
+    if raw.trim().is_empty() {
+        None
+    } else {
+        Some(raw)
+    }
+}
+
 /// `backend_url` is the base origin (e.g. `http://localhost:8000`) — same
 /// convention `uploader::UreqTransport` uses since AG-REL-003's own fix,
 /// not the full path.
 pub fn start(backend_url: &str) -> Result<PairStart, PairingError> {
     let url = format!("{}/v1/agent/pair/start", backend_url.trim_end_matches('/'));
+    let body = serde_json::to_string(&PairStartRequest { device_label: local_device_label() })
+        .map_err(|_| PairingError::UnexpectedResponse)?;
     let response = agent()
         .post(&url)
         .set("Content-Type", "application/json")
-        .send_string("{}")
+        .send_string(&body)
         .map_err(|_| PairingError::Network)?;
     let text = response
         .into_string()
@@ -114,6 +137,18 @@ fn urlencode(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The real bug this fixes: `start()` used to send a bare `"{}"`
+    /// body, so every pairing's `device_label` stayed `null` forever
+    /// (see `data_bugs/empty_device_label.png`) -- this machine's real
+    /// hostname must come back non-empty on every CI/dev box that runs
+    /// this test.
+    #[test]
+    fn local_device_label_is_not_empty_on_a_real_machine() {
+        let label = local_device_label();
+        assert!(label.is_some(), "gethostname() should succeed on any real machine running this test");
+        assert!(!label.unwrap().trim().is_empty());
+    }
 
     /// Real, live check against whatever backend is running at
     /// `http://localhost:8000` in this dev environment (the same one

@@ -43,6 +43,7 @@ dependencies = [
  "collector-core",
  "durable-queue",
  "event-contract",
+ "gethostname",
  "lifecycle",
  "linux-collector",
  "macos-collector",
