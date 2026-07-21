@@ -85,6 +85,19 @@ Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
 [Files]
 Source: "..\..\target\release\growth-layer-agent.exe"; DestDir: "{app}"; Flags: ignoreversion
 
+; A real, found-by-the-user gap: without this section, the installer
+; registered autostart and ran the agent once, but left NO way to find
+; or relaunch it afterward short of rebooting -- no Start Menu entry at
+; all (DisableProgramGroupPage=yes above only skips the WIZARD PAGE that
+; asks which group name to use; it does not create icons on its own).
+; One shortcut, fixed group name (matches DisableProgramGroupPage's own
+; "no interactive choice" philosophy this script already follows) --
+; deliberately no Desktop icon, since a tray-only background agent
+; showing up on the Desktop is the more surprising, unrequested one of
+; the two conventional shortcut locations.
+[Icons]
+Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
+
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Parameters: "--register-autostart"; Flags: runhidden waituntilterminated; StatusMsg: "Настройка автозапуска..."
 Filename: "{app}\{#MyAppExeName}"; Description: "Запустить Growth Layer Agent"; Flags: nowait postinstall skipifsilent
