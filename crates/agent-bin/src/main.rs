@@ -55,7 +55,7 @@ use std::time::Duration;
 use ui_shell::{run_tray, AgentController, AgentStatus};
 use uploader::{BackoffConfig, BackoffState, Uploader, UploaderConfig, UreqTransport};
 
-const AGENT_VERSION: &str = "0.1.1-rust-prototype";
+const AGENT_VERSION: &str = "0.1.2-rust-prototype";
 const AUTOSTART_APP_NAME: &str = "GrowthLayerAgent";
 const POLL_INTERVAL: Duration = Duration::from_secs(2);
 const EXPORT_INTERVAL_SECONDS: f64 = 60.0; // matches agent/config.yaml's override, not the 300s dataclass default
