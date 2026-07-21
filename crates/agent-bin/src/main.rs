@@ -1,3 +1,16 @@
+// Real, found-by-a-real-user bug: without this, Rust's default Windows
+// build target is the "console" subsystem, so Windows allocates a real
+// console window for every launch (Start Menu shortcut, autostart,
+// double-click) -- an empty, do-nothing terminal that stays open for
+// the process's entire lifetime (this agent never prints to stdout),
+// exactly the "висит пустой терминал" symptom reported. `"windows"`
+// subsystem means no console is ever created; the tray-only UI this
+// agent already has (ADR 0013) was always the intended interface.
+// `cfg_attr(windows, ...)` since this attribute doesn't exist as a
+// concept on Linux/macOS (which never had a console-window problem to
+// begin with) -- unconditional use would be a compile error there.
+#![cfg_attr(windows, windows_subsystem = "windows")]
+
 //! `growth-layer-agent` — the single running process AG-WIN-002/
 //! AG-LNX-003's installers package. Wires together every building-block
 //! crate from AG-003 through AG-LNX-002 into one real agent: lifecycle
