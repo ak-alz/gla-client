@@ -89,6 +89,8 @@ const DEFAULT_CATEGORY_MAP: &[(&str, &str)] = &[
     ("chromium-browse", "browser"), // truncated "chromium-browser"
     ("opera", "browser"),
     ("vivaldi-bin", "browser"),
+    ("msedge", "browser"), // Edge for Linux
+    ("yandex-browser", "browser"),
     // IDE / development
     ("code", "ide"), // VS Code
     ("code-oss", "ide"),
@@ -103,10 +105,13 @@ const DEFAULT_CATEGORY_MAP: &[(&str, &str)] = &[
     ("datagrip", "ide"),
     ("rubymine", "ide"),
     ("sublime_text", "ide"),
+    // No Linux equivalent exists for devenv.exe (Visual Studio proper),
+    // notepad++.exe, or vmconnect.exe (Hyper-V console) -- none ported,
+    // not an oversight.
     // Terminals
     ("ptyxis", "terminal"), // GNOME's current default terminal (GNOME 46+)
     ("gnome-terminal-", "terminal"), // truncated "gnome-terminal-server"
-    ("konsole", "terminal"),
+    ("konsole", "terminal"), // KDE's default terminal
     ("xterm", "terminal"),
     ("alacritty", "terminal"),
     ("kitty", "terminal"),
@@ -114,20 +119,37 @@ const DEFAULT_CATEGORY_MAP: &[(&str, &str)] = &[
     ("tilix", "terminal"),
     ("xfce4-terminal", "terminal"),
     ("urxvt", "terminal"),
+    ("foot", "terminal"), // wlroots-native terminal
+    ("wezterm-gui", "terminal"),
+    ("st", "terminal"), // suckless terminal
     // Communication
     ("slack", "communication"),
     ("discord", "communication"),
-    ("telegram-deskt", "communication"), // truncated "telegram-desktop"
+    ("telegram", "communication"), // the actual Telegram Desktop binary name
+    ("telegram-deskt", "communication"), // truncated "telegram-desktop" (some packagings)
     ("thunderbird", "communication"),
     ("teams-for-linux", "communication"),
     ("zoom", "communication"),
     ("skypeforlinux", "communication"),
+    ("element-desktop", "communication"),
+    ("signal-desktop", "communication"),
+    ("mattermost-deskt", "communication"), // truncated "mattermost-desktop"
+    // No native Linux Outlook exists -- not ported.
     // Office / documents
-    ("soffice.bin", "office"), // LibreOffice's actual process name
+    ("soffice.bin", "office"), // LibreOffice's actual process name (also covers OnlyOffice's LO-based fork)
+    // Task trackers / CRM
+    // No native Linux Bitrix24 desktop client -- not ported.
+    // System
+    ("nautilus", "system"), // GNOME Files
+    ("dolphin", "system"), // KDE's file manager
+    ("nemo", "system"), // Cinnamon's file manager
+    ("thunar", "system"), // XFCE's file manager
     // Media
     ("vlc", "media"),
     ("spotify", "media"),
     // Games
+    ("lutris", "games"),
+    ("heroic", "games"), // Heroic Games Launcher (Epic/GOG on Linux)
     ("steam", "games"),
 ];
 
