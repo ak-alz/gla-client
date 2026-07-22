@@ -17,9 +17,23 @@ pub const INPUT_EVENT_SIZE: usize = 24;
 
 const EV_KEY: u16 = 0x01;
 const EV_REL: u16 = 0x02;
+const EV_ABS: u16 = 0x03;
 
 const REL_X: u16 = 0x00;
 const REL_Y: u16 = 0x01;
+/// Virtual/VM pointers (QEMU's default USB tablet, VirtualBox/VMware
+/// guest-integration mice) report ABSOLUTE position (`EV_ABS`) instead
+/// of relative deltas, specifically so the guest cursor tracks the
+/// host's 1:1 without a capture/release step — a real, common setup,
+/// not a hypothetical: found because a real VM's mouse clicks counted
+/// correctly (`EV_KEY`/`BTN_*`, unaffected by REL vs ABS) while its
+/// movement stayed at zero all day. `ABS_X`/`ABS_Y` happen to share
+/// `REL_X`/`REL_Y`'s numeric codes (both `0x00`/`0x01`) under the
+/// kernel's `input-event-codes.h` — coincidence of the ABI, not a
+/// reason to conflate the two event *types*, which is why this is a
+/// separate constant pair, not a reuse of `REL_X`/`REL_Y`.
+const ABS_X: u16 = 0x00;
+const ABS_Y: u16 = 0x01;
 
 /// First button code (`BTN_MISC`) — codes below this in the `EV_KEY`
 /// range are keyboard keys; this code and above are buttons (mouse,
@@ -66,10 +80,10 @@ pub fn parse_input_event(bytes: &[u8]) -> Option<RawInputEvent> {
 }
 
 /// Classifies one already-parsed event, or `None` for anything this
-/// collector doesn't count (`EV_SYN` frame separators, `EV_ABS`,
-/// key/button releases, autorepeat, etc.) — mirrors
-/// `windows-collector::hooks`'s hook procedures' own `match` exactly:
-/// increment on specific, narrow conditions, ignore everything else.
+/// collector doesn't count (`EV_SYN` frame separators, key/button
+/// releases, autorepeat, etc.) — mirrors `windows-collector::hooks`'s
+/// hook procedures' own `match` exactly: increment on specific, narrow
+/// conditions, ignore everything else.
 pub fn classify_event(event: RawInputEvent) -> Option<EventKind> {
     match event.event_type {
         EV_KEY if event.value == KEY_PRESSED => {
@@ -80,6 +94,9 @@ pub fn classify_event(event: RawInputEvent) -> Option<EventKind> {
             }
         }
         EV_REL if event.code == REL_X || event.code == REL_Y => Some(EventKind::MouseMove),
+        // See ABS_X/ABS_Y's doc comment: virtual/VM pointers report
+        // absolute position instead of relative deltas.
+        EV_ABS if event.code == ABS_X || event.code == ABS_Y => Some(EventKind::MouseMove),
         _ => None,
     }
 }
@@ -140,6 +157,26 @@ mod tests {
         let y = parse_input_event(&encode(EV_REL, REL_Y, -3)).unwrap();
         assert_eq!(classify_event(x), Some(EventKind::MouseMove));
         assert_eq!(classify_event(y), Some(EventKind::MouseMove));
+    }
+
+    /// Real, user-hit bug: a VM's virtual pointer (QEMU/VirtualBox/VMware
+    /// guest-integration mice all default to this) reports ABSOLUTE
+    /// position, never `EV_REL` at all — confirmed via production data
+    /// showing real mouse clicks (`EV_KEY`) counted correctly all day
+    /// while movement stayed at exactly zero.
+    #[test]
+    fn abs_x_and_abs_y_are_also_mouse_move() {
+        let x = parse_input_event(&encode(EV_ABS, ABS_X, 500)).unwrap();
+        let y = parse_input_event(&encode(EV_ABS, ABS_Y, 300)).unwrap();
+        assert_eq!(classify_event(x), Some(EventKind::MouseMove));
+        assert_eq!(classify_event(y), Some(EventKind::MouseMove));
+    }
+
+    #[test]
+    fn other_abs_axes_are_not_counted() {
+        const ABS_PRESSURE: u16 = 0x18;
+        let event = parse_input_event(&encode(EV_ABS, ABS_PRESSURE, 100)).unwrap();
+        assert_eq!(classify_event(event), None);
     }
 
     #[test]
