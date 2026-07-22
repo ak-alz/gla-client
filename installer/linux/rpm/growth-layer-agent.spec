@@ -44,13 +44,13 @@ sed 's|%INSTALL_BIN%|/usr/bin/growth-layer-agent|' \
 /usr/share/applications/growth-layer-agent.desktop
 
 %post
-# The one real thing worth doing here (see ../deb/postinst's doc comment
-# for the full reasoning this mirrors exactly): grant the real installing
-# user `input`-group membership, without which keyboard/mouse activity is
-# silently, permanently counted as zero — a real, user-hit bug, not a
-# hypothetical. Autostart itself stays a no-op here, still registered by
-# the agent from a real user session (lifecycle::Autostart), unreachable
-# from this root-run scriptlet regardless.
+# See ../deb/postinst's doc comment for the full reasoning this mirrors
+# exactly: grant `input`-group membership (without it keyboard/mouse
+# activity is silently, permanently counted as zero), then start the
+# agent — both on login going forward (XDG autostart, no session
+# needed) and right now (best-effort systemd --user + immediate
+# background launch) — nothing installed by this package used to ever
+# launch it, a real user-hit gap, not a hypothetical.
 REAL_USER="${SUDO_USER:-}"
 if [ -z "$REAL_USER" ] || [ "$REAL_USER" = "root" ]; then
     REAL_USER="$(logname 2>/dev/null || true)"
@@ -67,6 +67,18 @@ if [ -n "$REAL_USER" ] && [ "$REAL_USER" != "root" ] && id "$REAL_USER" >/dev/nu
         echo "growth-layer-agent: added '$REAL_USER' to the 'input' group (log out and back in, or reboot, for this to take effect)"
     else
         echo "growth-layer-agent: could not add '$REAL_USER' to the 'input' group — run manually: sudo usermod -aG input $REAL_USER, then log out and back in"
+    fi
+
+    REAL_HOME="$(getent passwd "$REAL_USER" | cut -d: -f6)"
+    if [ -n "$REAL_HOME" ] && [ -f /usr/share/applications/growth-layer-agent.desktop ]; then
+        mkdir -p "$REAL_HOME/.config/autostart"
+        cp /usr/share/applications/growth-layer-agent.desktop "$REAL_HOME/.config/autostart/growth-layer-agent.desktop"
+        chown "$REAL_USER": "$REAL_HOME/.config/autostart/growth-layer-agent.desktop" 2>/dev/null || true
+    fi
+    if command -v runuser >/dev/null 2>&1; then
+        runuser -u "$REAL_USER" -- growth-layer-agent --register-autostart >/dev/null 2>&1 || true
+        runuser -u "$REAL_USER" -- setsid growth-layer-agent >/dev/null 2>&1 &
+        echo "growth-layer-agent: started now — look for the tray icon (will also start automatically at next login)"
     fi
 else
     echo "growth-layer-agent: could not determine the real user to grant 'input' group access to — run manually: sudo usermod -aG input \$USER, then log out and back in"

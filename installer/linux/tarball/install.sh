@@ -10,6 +10,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BIN_DIR="$HOME/.local/bin"
 ICON_BASE="$HOME/.local/share/icons/hicolor"
 DESKTOP_DIR="$HOME/.local/share/applications"
+AUTOSTART_DIR="$HOME/.config/autostart"
 
 mkdir -p "$BIN_DIR" "$DESKTOP_DIR"
 install -m 755 "$SCRIPT_DIR/bin/growth-layer-agent" "$BIN_DIR/growth-layer-agent"
@@ -25,6 +26,14 @@ done
 # shell's PATH when launching a .desktop entry, so this must be absolute.
 sed "s|%INSTALL_BIN%|$BIN_DIR/growth-layer-agent|" "$SCRIPT_DIR/growth-layer-agent.desktop" \
     > "$DESKTOP_DIR/growth-layer-agent.desktop"
+
+# XDG autostart — a copy of the same .desktop entry, just in
+# ~/.config/autostart/ instead of ~/.local/share/applications/. Complements
+# --register-autostart below (systemd --user): this one needs nothing but
+# a file copy, no active D-Bus session required, so it's the more
+# reliable "starts at next login" guarantee of the two.
+mkdir -p "$AUTOSTART_DIR"
+cp "$DESKTOP_DIR/growth-layer-agent.desktop" "$AUTOSTART_DIR/growth-layer-agent.desktop"
 
 # Best-effort — not every desktop environment has these tools, and a
 # missing one is never fatal to the install (the icon still appears
@@ -86,3 +95,11 @@ if ! groups "$USER" 2>/dev/null | grep -qw input; then
         echo "warning: could not add '$USER' to the 'input' group — run manually: sudo usermod -aG input \$USER, then log out and back in"
     fi
 fi
+
+# Start it now too — a real gap found after shipping: everything above
+# installed and registered autostart for NEXT login, but nothing ever
+# launched the agent for the CURRENT session, so a user still had to
+# know to run it by hand once. `setsid` detaches it from this script's
+# own process group so it keeps running after install.sh exits.
+setsid "$BIN_DIR/growth-layer-agent" >/dev/null 2>&1 &
+echo "started growth-layer-agent now — look for the tray icon"

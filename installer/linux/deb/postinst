@@ -48,4 +48,37 @@ else
     echo "growth-layer-agent: could not determine the real user to grant 'input' group access to — run manually: sudo usermod -aG input \$USER, then log out and back in"
 fi
 
+# Start on login + start right now — a real gap found after shipping:
+# nothing installed by this package ever launched the agent or
+# registered it to start automatically; a user had to know to open a
+# terminal and run `growth-layer-agent` by hand every single session.
+#
+# Two independent mechanisms, not one, because neither is reliable
+# alone from a root postinst:
+# - `~/.config/autostart/*.desktop` (XDG autostart) needs nothing but a
+#   file copy — works even if the real user isn't logged in right now,
+#   unlike systemd --user below.
+# - `growth-layer-agent --register-autostart` (the same systemd --user
+#   unit Windows'/tarball's install already register) needs a running
+#   user D-Bus session, which usually doesn't exist yet during a
+#   terminal-only `apt install` — attempted anyway, best-effort, since
+#   it DOES work when installing from inside an active graphical
+#   session (e.g. a GUI package manager), and costs nothing to try.
+if [ -n "$REAL_USER" ] && [ "$REAL_USER" != "root" ] && id "$REAL_USER" >/dev/null 2>&1; then
+    REAL_HOME="$(getent passwd "$REAL_USER" | cut -d: -f6)"
+    if [ -n "$REAL_HOME" ] && [ -f /usr/share/applications/growth-layer-agent.desktop ]; then
+        mkdir -p "$REAL_HOME/.config/autostart"
+        cp /usr/share/applications/growth-layer-agent.desktop "$REAL_HOME/.config/autostart/growth-layer-agent.desktop"
+        chown "$REAL_USER": "$REAL_HOME/.config/autostart/growth-layer-agent.desktop" 2>/dev/null || true
+    fi
+
+    if command -v runuser >/dev/null 2>&1; then
+        runuser -u "$REAL_USER" -- growth-layer-agent --register-autostart >/dev/null 2>&1 || true
+        # setsid: detach from this postinst's own process group so the
+        # agent survives long after dpkg/apt itself exits.
+        runuser -u "$REAL_USER" -- setsid growth-layer-agent >/dev/null 2>&1 &
+        echo "growth-layer-agent: started now — look for the tray icon (will also start automatically at next login)"
+    fi
+fi
+
 exit 0

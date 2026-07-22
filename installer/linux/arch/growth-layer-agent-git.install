@@ -18,19 +18,46 @@ grant_input_group() {
             groupadd -r input 2>/dev/null || true
         fi
         if usermod -aG input "$real_user" 2>/dev/null; then
-            echo "growth-layer-agent: added '$real_user' to the 'input' group (log out and back in, or reboot, for this to take effect — needed for keyboard/mouse activity to be counted at all)"
+            echo "growth-layer-agent: added '$real_user' to the 'input' group (log out and back in, or reboot, for this to take effect — needed for keyboard/mouse activity to be counted at all)" >&2
         else
-            echo "growth-layer-agent: could not add '$real_user' to the 'input' group — run manually: sudo usermod -aG input $real_user, then log out and back in"
+            echo "growth-layer-agent: could not add '$real_user' to the 'input' group — run manually: sudo usermod -aG input $real_user, then log out and back in" >&2
         fi
     else
-        echo "growth-layer-agent: could not determine the real user to grant 'input' group access to — run manually: sudo usermod -aG input \$USER, then log out and back in"
+        echo "growth-layer-agent: could not determine the real user to grant 'input' group access to — run manually: sudo usermod -aG input \$USER, then log out and back in" >&2
+        real_user=""
+    fi
+    # Only this goes to stdout — callers capture it via $(grant_input_group);
+    # every status message above is on stderr on purpose, or it would end
+    # up silently swallowed into that captured value instead of shown.
+    printf '%s' "$real_user"
+}
+
+# Start on login (XDG autostart, no active session needed) + start
+# right now (best-effort systemd --user + immediate background launch)
+# — nothing installed by this package used to ever launch the agent, a
+# real user-hit gap, not a hypothetical.
+start_agent() {
+    real_user="$1"
+    [ -n "$real_user" ] || return 0
+    real_home="$(getent passwd "$real_user" | cut -d: -f6)"
+    if [ -n "$real_home" ] && [ -f /usr/share/applications/growth-layer-agent.desktop ]; then
+        mkdir -p "$real_home/.config/autostart"
+        cp /usr/share/applications/growth-layer-agent.desktop "$real_home/.config/autostart/growth-layer-agent.desktop"
+        chown "$real_user": "$real_home/.config/autostart/growth-layer-agent.desktop" 2>/dev/null || true
+    fi
+    if command -v runuser >/dev/null 2>&1; then
+        runuser -u "$real_user" -- growth-layer-agent --register-autostart >/dev/null 2>&1 || true
+        runuser -u "$real_user" -- setsid growth-layer-agent >/dev/null 2>&1 &
+        echo "growth-layer-agent: started now — look for the tray icon (will also start automatically at next login)"
     fi
 }
 
 post_install() {
-    grant_input_group
+    real_user="$(grant_input_group)"
+    start_agent "$real_user"
 }
 
 post_upgrade() {
-    grant_input_group
+    real_user="$(grant_input_group)"
+    start_agent "$real_user"
 }

@@ -37,7 +37,7 @@ dependencies = [
 
 [[package]]
 name = "agent-bin"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "chrono",
  "collector-core",
