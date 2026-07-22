@@ -10,13 +10,19 @@ set -euo pipefail
 BIN_DIR="$HOME/.local/bin"
 ICON_BASE="$HOME/.local/share/icons/hicolor"
 DESKTOP_DIR="$HOME/.local/share/applications"
+AUTOSTART_DIR="$HOME/.config/autostart"
+EXT_DIR="$HOME/.local/share/gnome-shell/extensions/growth-layer-agent@growthlayer.app"
 
 if [ -x "$BIN_DIR/growth-layer-agent" ]; then
     "$BIN_DIR/growth-layer-agent" --unregister-autostart || true
 fi
 
+command -v gnome-extensions >/dev/null 2>&1 && gnome-extensions disable growth-layer-agent@growthlayer.app >/dev/null 2>&1 || true
+rm -rf "$EXT_DIR"
+
 rm -f "$BIN_DIR/growth-layer-agent"
 rm -f "$DESKTOP_DIR/growth-layer-agent.desktop"
+rm -f "$AUTOSTART_DIR/growth-layer-agent.desktop"
 for size_dir in "$ICON_BASE"/*/apps/growth-layer-agent.png; do
     rm -f "$size_dir"
 done

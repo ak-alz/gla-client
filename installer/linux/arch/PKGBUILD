@@ -64,4 +64,13 @@ package() {
         > "$srcdir/growth-layer-agent.desktop"
     install -Dm644 "$srcdir/growth-layer-agent.desktop" \
         "$pkgdir/usr/share/applications/growth-layer-agent.desktop"
+
+    # GNOME Shell extension source — see ../deb/build.sh's comment:
+    # staged read-only here, copied into the user's own home by
+    # growth-layer-agent-git.install (a GNOME Shell extension only
+    # loads from there).
+    install -Dm644 installer/linux/gnome-extension/metadata.json \
+        "$pkgdir/usr/share/growth-layer-agent/gnome-extension/metadata.json"
+    install -Dm644 installer/linux/gnome-extension/extension.js \
+        "$pkgdir/usr/share/growth-layer-agent/gnome-extension/extension.js"
 }

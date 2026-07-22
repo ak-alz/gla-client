@@ -6,6 +6,7 @@
 
 use crate::environment::{detect_active_window_backend, ActiveWindowBackend, UnsupportedReason};
 use crate::evdev_counter::EvdevInputMonitor;
+use crate::gnome_extension::GnomeExtensionSession;
 use crate::hyprland;
 use crate::input_counters::InputCounters;
 use crate::process_name::process_name_for_pid;
@@ -30,6 +31,7 @@ enum ActiveWindowSource {
     // every `ActiveWindowSource`, even the common non-X11 cases.
     X11(Box<X11Session>),
     Hyprland(PathBuf),
+    GnomeExtension(GnomeExtensionSession),
     Unsupported(UnsupportedReason),
 }
 
@@ -83,6 +85,24 @@ impl SignalCollector for LinuxSignalCollector {
             .unwrap_or(ActiveWindowSource::Unsupported(
                 UnsupportedReason::UnknownSessionType,
             )),
+            // A `Connection::session()` succeeding only means a session
+            // bus exists — it says nothing about whether the companion
+            // Shell extension is actually loaded (not installed, not
+            // enabled, or installed but awaiting the next login on
+            // Wayland all look identical at the connection step). The
+            // ONE real liveness check is an actual method call: if it
+            // fails, fall back to the same honest `Unsupported` this
+            // reported before the extension existed, never a silent
+            // guess that it's there.
+            ActiveWindowBackend::Unsupported(UnsupportedReason::GnomeRequiresShellExtension) => {
+                GnomeExtensionSession::connect()
+                    .ok()
+                    .filter(|session| session.focused_window_pid().is_ok())
+                    .map(ActiveWindowSource::GnomeExtension)
+                    .unwrap_or(ActiveWindowSource::Unsupported(
+                        UnsupportedReason::GnomeRequiresShellExtension,
+                    ))
+            }
             ActiveWindowBackend::Unsupported(reason) => ActiveWindowSource::Unsupported(reason),
         });
 
@@ -115,6 +135,16 @@ impl SignalCollector for LinuxSignalCollector {
             }
             Some(ActiveWindowSource::Hyprland(path)) => {
                 let pid = hyprland::active_window_pid(path).ok().flatten();
+                let process_name = pid.and_then(process_name_for_pid);
+                (process_name, self.input_counters.idle_seconds())
+            }
+            Some(ActiveWindowSource::GnomeExtension(session)) => {
+                // No GNOME-specific idle source is wired up in this
+                // collector (see AGENT_LINUX_CAPABILITY_MATRIX.md's
+                // "likely supported, unverified" note on Mutter's own
+                // IdleMonitor) — the evdev-based fallback already used
+                // for Hyprland/Wayland generally applies here too.
+                let pid = session.focused_window_pid().ok().flatten();
                 let process_name = pid.and_then(process_name_for_pid);
                 (process_name, self.input_counters.idle_seconds())
             }

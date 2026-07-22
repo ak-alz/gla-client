@@ -42,6 +42,11 @@ cp "$SCRIPT_DIR/install.sh" "$ROOT/install.sh"
 cp "$SCRIPT_DIR/uninstall.sh" "$ROOT/uninstall.sh"
 chmod 755 "$ROOT/install.sh" "$ROOT/uninstall.sh"
 
+mkdir -p "$ROOT/gnome-extension"
+cp "$AGENT_CORE_DIR/installer/linux/gnome-extension/metadata.json" \
+   "$AGENT_CORE_DIR/installer/linux/gnome-extension/extension.js" \
+   "$ROOT/gnome-extension/"
+
 mkdir -p "$OUT_DIR"
 TAR_PATH="$OUT_DIR/${PKG_NAME}.tar.gz"
 tar -czf "$TAR_PATH" -C "$STAGE" "$PKG_NAME"

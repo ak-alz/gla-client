@@ -46,6 +46,18 @@ sed "s|%INSTALL_BIN%|/usr/bin/growth-layer-agent|" \
     "$AGENT_CORE_DIR/installer/linux/tarball/growth-layer-agent.desktop" \
     > "$STAGE/usr/share/applications/growth-layer-agent.desktop"
 
+# GNOME Shell extension source, staged read-only under /usr/share — the
+# per-user copy under ~/.local/share/gnome-shell/extensions/ is made by
+# postinst (a GNOME Shell extension must live under the user's own home
+# to be loaded at all; there is no system-wide extension directory
+# GNOME Shell honors the same way). See gnome_extension.rs's module doc
+# comment for what this closes (GNOME active-window detection) and its
+# real caveat (untested against a real GNOME session).
+mkdir -p "$STAGE/usr/share/growth-layer-agent/gnome-extension"
+cp "$AGENT_CORE_DIR/installer/linux/gnome-extension/metadata.json" \
+   "$AGENT_CORE_DIR/installer/linux/gnome-extension/extension.js" \
+   "$STAGE/usr/share/growth-layer-agent/gnome-extension/"
+
 # postinst: the one real, root-only thing worth doing at install time —
 # see postinst's own header comment for why this replaces the earlier
 # "nothing for a maintainer script to correctly do here" position (true

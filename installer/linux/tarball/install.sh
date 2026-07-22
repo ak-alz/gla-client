@@ -35,6 +35,17 @@ sed "s|%INSTALL_BIN%|$BIN_DIR/growth-layer-agent|" "$SCRIPT_DIR/growth-layer-age
 mkdir -p "$AUTOSTART_DIR"
 cp "$DESKTOP_DIR/growth-layer-agent.desktop" "$AUTOSTART_DIR/growth-layer-agent.desktop"
 
+# GNOME Shell extension — see ../deb/postinst's doc comment for the full
+# reasoning (org.gnome.Shell.Eval gated behind unsafe mode since GNOME
+# 41). Running as the user already (no runuser/env-forwarding needed
+# here, unlike the root-context .deb/.rpm/PKGBUILD installers).
+if [ -f "$SCRIPT_DIR/gnome-extension/metadata.json" ]; then
+    EXT_UUID=growth-layer-agent@growthlayer.app
+    EXT_DEST="$HOME/.local/share/gnome-shell/extensions/$EXT_UUID"
+    mkdir -p "$EXT_DEST"
+    cp "$SCRIPT_DIR/gnome-extension/metadata.json" "$SCRIPT_DIR/gnome-extension/extension.js" "$EXT_DEST/"
+fi
+
 # Best-effort — not every desktop environment has these tools, and a
 # missing one is never fatal to the install (the icon still appears
 # correctly on next login/re-scan even without a manual cache refresh).
@@ -72,6 +83,16 @@ fi
 # binary is confirmed runnable (see the ldd check above).
 "$BIN_DIR/growth-layer-agent" --register-autostart || true
 
+# Best-effort: enabling now means it's ready the NEXT time GNOME Shell
+# restarts (a fresh login on Wayland) — never claimed as active
+# immediately, since the collector's own probe (gnome_extension.rs) is
+# the honest source of truth for whether it's actually working.
+if [ -d "$HOME/.local/share/gnome-shell/extensions/growth-layer-agent@growthlayer.app" ] \
+    && command -v gnome-extensions >/dev/null 2>&1 \
+    && gnome-extensions enable growth-layer-agent@growthlayer.app >/dev/null 2>&1; then
+    echo "GNOME Shell extension enabled (needed for active-app tracking on GNOME) — takes effect after the next log out/in"
+fi
+
 # Without this, `/dev/input/event*` can never be opened and keyboard/
 # mouse activity is silently, permanently counted as zero (see
 # linux-collector::evdev_counter's own doc comment) — a real bug this
@@ -99,7 +120,13 @@ fi
 # Start it now too — a real gap found after shipping: everything above
 # installed and registered autostart for NEXT login, but nothing ever
 # launched the agent for the CURRENT session, so a user still had to
-# know to run it by hand once. `setsid` detaches it from this script's
-# own process group so it keeps running after install.sh exits.
-setsid "$BIN_DIR/growth-layer-agent" >/dev/null 2>&1 &
+# know to run it by hand once. `systemctl --user restart`, not a bare
+# `setsid ... &`: see ../deb/postinst's doc comment for the full
+# reasoning — a raw detached process is invisible to systemd, so
+# re-running this script (e.g. after downloading a newer tarball) used
+# to leave the previous run's process orphaned instead of replacing it.
+# `restart` on a unit that was never started is equivalent to `start`
+# (systemd's own documented behavior), so this is correct on a first
+# install too.
+systemctl --user restart GrowthLayerAgent.service >/dev/null 2>&1 || true
 echo "started growth-layer-agent now — look for the tray icon"

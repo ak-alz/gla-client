@@ -6,11 +6,15 @@
 //! read that feeds it.
 //!
 //! Per AG-LNX-001's capability matrix and the user's explicit scoping
-//! decision for AG-LNX-002: X11 and Hyprland get real backends here;
-//! GNOME, KDE, and any other/unrecognized Wayland compositor report an
-//! explicit unsupported status rather than guessing or silently
-//! returning stale data — "Missing capability returns explicit status"
-//! is this task's own acceptance criterion, not an afterthought.
+//! decision for AG-LNX-002: X11 and Hyprland get real backends here.
+//! GNOME is detected as needing its companion Shell extension by THIS
+//! pure function — `collector.rs` is the layer that actually probes
+//! whether that extension is installed/loaded and only then falls back
+//! to reporting it unsupported. KDE and any other/unrecognized Wayland
+//! compositor report an explicit unsupported status rather than
+//! guessing or silently returning stale data — "Missing capability
+//! returns explicit status" is this task's own acceptance criterion,
+//! not an afterthought.
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ActiveWindowBackend {
@@ -26,8 +30,14 @@ pub enum ActiveWindowBackend {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UnsupportedReason {
     /// GNOME Shell's `org.gnome.Shell.Eval` is gated behind unsafe mode
-    /// since GNOME 41 — a custom Shell extension (not shipped by this
-    /// task) is required. See AGENT_LINUX_CAPABILITY_MATRIX.md.
+    /// since GNOME 41 — the companion Shell extension
+    /// (`installer/linux/gnome-extension/`, `gnome_extension.rs`) closes
+    /// this, but only once it's actually installed AND loaded (a fresh
+    /// install needs one log out/in on Wayland — see the extension's own
+    /// metadata). This variant means the extension didn't respond right
+    /// now, for any of those reasons — `collector.rs` is the layer that
+    /// actually attempts the D-Bus call before falling back to this.
+    /// See AGENT_LINUX_CAPABILITY_MATRIX.md.
     GnomeRequiresShellExtension,
     /// KWin scripting requires a loaded KWin script (not shipped by this
     /// task) — see AGENT_LINUX_CAPABILITY_MATRIX.md.

@@ -45,6 +45,19 @@ start_agent() {
         cp /usr/share/applications/growth-layer-agent.desktop "$real_home/.config/autostart/growth-layer-agent.desktop"
         chown "$real_user": "$real_home/.config/autostart/growth-layer-agent.desktop" 2>/dev/null || true
     fi
+
+    # GNOME Shell extension — see ../deb/postinst's doc comment for the
+    # full reasoning (org.gnome.Shell.Eval gated behind unsafe mode since
+    # GNOME 41).
+    ext_src=/usr/share/growth-layer-agent/gnome-extension
+    ext_uuid=growth-layer-agent@growthlayer.app
+    if [ -n "$real_home" ] && [ -d "$ext_src" ]; then
+        ext_dest="$real_home/.local/share/gnome-shell/extensions/$ext_uuid"
+        mkdir -p "$ext_dest"
+        cp "$ext_src/metadata.json" "$ext_src/extension.js" "$ext_dest/"
+        chown "$real_user": "$ext_dest" "$ext_dest/metadata.json" "$ext_dest/extension.js" 2>/dev/null || true
+    fi
+
     if command -v runuser >/dev/null 2>&1; then
         # `runuser` alone hands the child none of the graphical session's
         # environment — this .install script runs as root, which never
@@ -67,6 +80,10 @@ start_agent() {
             # cause of "sometimes no icon at all".
             runuser -u "$real_user" -- env XDG_RUNTIME_DIR="$runtime_dir" DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime_dir/bus" systemctl --user restart GrowthLayerAgent.service >/dev/null 2>&1 || true
             echo "growth-layer-agent: started now — look for the tray icon (will also start automatically at next login)"
+
+            if [ -d "$real_home/.local/share/gnome-shell/extensions/$ext_uuid" ] && runuser -u "$real_user" -- env XDG_RUNTIME_DIR="$runtime_dir" DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime_dir/bus" gnome-extensions enable "$ext_uuid" >/dev/null 2>&1; then
+                echo "growth-layer-agent: GNOME Shell extension enabled (needed for active-app tracking on GNOME) — takes effect after the next log out/in"
+            fi
         else
             echo "growth-layer-agent: will start automatically at next login (no active desktop session detected right now to start it immediately)"
         fi

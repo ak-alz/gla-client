@@ -7,12 +7,14 @@
 //! backend uses, and systemd-user-service autostart (implemented in
 //! `lifecycle::Autostart`'s Linux path, not duplicated here).
 //!
-//! GNOME and KDE (Wayland) explicitly report
-//! [`environment::UnsupportedReason`] rather than guessing or silently
-//! returning stale data — see `docs/02_ARCHITECTURE/
-//! AGENT_LINUX_CAPABILITY_MATRIX.md` for why (GNOME requires a
-//! not-yet-shipped Shell extension, KDE a not-yet-shipped KWin script)
-//! and the user's explicit scoping decision for this task.
+//! GNOME (Wayland) works via a companion Shell extension
+//! (`gnome_extension.rs`, `installer/linux/gnome-extension/`) when it's
+//! installed and loaded; otherwise, and on KDE (Wayland) always, this
+//! crate explicitly reports [`environment::UnsupportedReason`] rather
+//! than guessing or silently returning stale data — see
+//! `docs/02_ARCHITECTURE/AGENT_LINUX_CAPABILITY_MATRIX.md` (KDE still
+//! needs a not-yet-shipped KWin script) and the user's explicit scoping
+//! decision for this task.
 //!
 //! Never reads, stores, logs, or returns a window title, keystroke, or
 //! pointer coordinate — the same privacy invariant as
@@ -38,6 +40,8 @@ mod collector;
 mod environment;
 #[cfg(target_os = "linux")]
 mod evdev_counter;
+#[cfg(target_os = "linux")]
+mod gnome_extension;
 #[cfg(target_os = "linux")]
 mod hyprland;
 #[cfg(target_os = "linux")]

@@ -38,10 +38,20 @@ sed 's|%INSTALL_BIN%|/usr/bin/growth-layer-agent|' \
     %{_agent_core_dir}/installer/linux/tarball/growth-layer-agent.desktop \
     > %{buildroot}/usr/share/applications/growth-layer-agent.desktop
 
+# GNOME Shell extension source — see ../deb/build.sh's comment: staged
+# read-only here, copied into the user's own home by %post (a GNOME
+# Shell extension only loads from there).
+mkdir -p %{buildroot}/usr/share/growth-layer-agent/gnome-extension
+install -m 644 %{_agent_core_dir}/installer/linux/gnome-extension/metadata.json \
+    %{_agent_core_dir}/installer/linux/gnome-extension/extension.js \
+    %{buildroot}/usr/share/growth-layer-agent/gnome-extension/
+
 %files
 /usr/bin/growth-layer-agent
 /usr/share/icons/hicolor/*/apps/growth-layer-agent.png
 /usr/share/applications/growth-layer-agent.desktop
+/usr/share/growth-layer-agent/gnome-extension/metadata.json
+/usr/share/growth-layer-agent/gnome-extension/extension.js
 
 %post
 # See ../deb/postinst's doc comment for the full reasoning this mirrors
@@ -75,6 +85,19 @@ if [ -n "$REAL_USER" ] && [ "$REAL_USER" != "root" ] && id "$REAL_USER" >/dev/nu
         cp /usr/share/applications/growth-layer-agent.desktop "$REAL_HOME/.config/autostart/growth-layer-agent.desktop"
         chown "$REAL_USER": "$REAL_HOME/.config/autostart/growth-layer-agent.desktop" 2>/dev/null || true
     fi
+
+    # GNOME Shell extension — see ../deb/postinst's doc comment for the
+    # full reasoning (org.gnome.Shell.Eval gated behind unsafe mode since
+    # GNOME 41).
+    EXT_SRC=/usr/share/growth-layer-agent/gnome-extension
+    EXT_UUID=growth-layer-agent@growthlayer.app
+    if [ -n "$REAL_HOME" ] && [ -d "$EXT_SRC" ]; then
+        EXT_DEST="$REAL_HOME/.local/share/gnome-shell/extensions/$EXT_UUID"
+        mkdir -p "$EXT_DEST"
+        cp "$EXT_SRC/metadata.json" "$EXT_SRC/extension.js" "$EXT_DEST/"
+        chown "$REAL_USER": "$EXT_DEST" "$EXT_DEST/metadata.json" "$EXT_DEST/extension.js" 2>/dev/null || true
+    fi
+
     if command -v runuser >/dev/null 2>&1; then
         # `runuser` alone hands the child none of the graphical session's
         # environment — this %post runs as root, which never had
@@ -97,6 +120,10 @@ if [ -n "$REAL_USER" ] && [ "$REAL_USER" != "root" ] && id "$REAL_USER" >/dev/nu
             # cause of "sometimes no icon at all".
             runuser -u "$REAL_USER" -- env XDG_RUNTIME_DIR="$RUNTIME_DIR" DBUS_SESSION_BUS_ADDRESS="unix:path=$RUNTIME_DIR/bus" systemctl --user restart GrowthLayerAgent.service >/dev/null 2>&1 || true
             echo "growth-layer-agent: started now — look for the tray icon (will also start automatically at next login)"
+
+            if [ -d "$REAL_HOME/.local/share/gnome-shell/extensions/$EXT_UUID" ] && runuser -u "$REAL_USER" -- env XDG_RUNTIME_DIR="$RUNTIME_DIR" DBUS_SESSION_BUS_ADDRESS="unix:path=$RUNTIME_DIR/bus" gnome-extensions enable "$EXT_UUID" >/dev/null 2>&1; then
+                echo "growth-layer-agent: GNOME Shell extension enabled (needed for active-app tracking on GNOME) — takes effect after the next log out/in"
+            fi
         else
             echo "growth-layer-agent: will start automatically at next login (no active desktop session detected right now to start it immediately)"
         fi
