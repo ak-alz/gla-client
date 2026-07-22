@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Growth Layer Agent
+Comment=Lightweight per-user desktop agent that collects activity signals for the Growth Layer product
+Exec=%INSTALL_BIN%
+Icon=growth-layer-agent
+Terminal=false
+Categories=Utility;
+NoDisplay=false

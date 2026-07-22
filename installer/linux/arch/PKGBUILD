@@ -1,0 +1,55 @@
+# Maintainer: Growth Layer Packaging <packaging@growth-layer.local>
+#
+# Arch has no dpkg/rpm compatibility at all (pacman is its own, separate
+# package database) — `dpkg -i`/`rpm -i` on Arch report every dependency
+# as "not installed" regardless of what's actually on the system, since
+# neither database was ever populated there. This is the Arch-native
+# equivalent of ../deb/build.sh and ../rpm/growth-layer-agent.spec, not
+# a variant of either. See also ../tarball/ for a package-manager-free
+# alternative that also works on Arch (and everywhere else).
+#
+# `sha256sums` below was computed from the real v$pkgver tag tarball
+# (`sha256sum` on the file GitHub's codeload actually serves for that
+# tag) — regenerate it whenever pkgver is bumped, a stale checksum is a
+# guaranteed makepkg failure, not a formality.
+pkgname=growth-layer-agent
+pkgver=0.1.3
+pkgrel=1
+pkgdesc="Lightweight per-user desktop agent that collects activity signals for the Growth Layer product"
+arch=('x86_64')
+url="https://github.com/ak-alz/gla-client"
+license=('custom:proprietary')
+depends=('gtk3' 'glib2' 'gdk-pixbuf2' 'xdotool')
+makedepends=('cargo' 'clang')
+source=("$pkgname-$pkgver.tar.gz::https://github.com/ak-alz/gla-client/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('da2af89ddffc27c825ec4c0459243cce08e82de95cdfb903ef8b2429daa0e9f7')
+
+build() {
+    cd "gla-client-$pkgver"
+    # `ring` (pulled in transitively for TLS) fails to link its hand-
+    # written assembly against Arch's current gcc — every crypto symbol
+    # in it comes back "undefined symbol" (reproduced for real in a
+    # clean Arch container, not a guess). clang builds it correctly;
+    # forcing it just for this build avoids depending on a gcc fix that
+    # isn't ours to make.
+    CC=clang cargo build --release --locked -p agent-bin
+}
+
+package() {
+    cd "gla-client-$pkgver"
+
+    install -Dm755 "target/release/growth-layer-agent" \
+        "$pkgdir/usr/bin/growth-layer-agent"
+
+    for size_dir in installer/linux/icons/hicolor/*/; do
+        size="$(basename "$size_dir")"
+        install -Dm644 "$size_dir/apps/growth-layer-agent.png" \
+            "$pkgdir/usr/share/icons/hicolor/$size/apps/growth-layer-agent.png"
+    done
+
+    sed "s|%INSTALL_BIN%|/usr/bin/growth-layer-agent|" \
+        installer/linux/tarball/growth-layer-agent.desktop \
+        > "$srcdir/growth-layer-agent.desktop"
+    install -Dm644 "$srcdir/growth-layer-agent.desktop" \
+        "$pkgdir/usr/share/applications/growth-layer-agent.desktop"
+}
