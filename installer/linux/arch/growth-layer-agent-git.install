@@ -59,7 +59,13 @@ start_agent() {
         runtime_dir="/run/user/$real_uid"
         if [ -n "$real_uid" ] && [ -S "$runtime_dir/bus" ]; then
             runuser -u "$real_user" -- env XDG_RUNTIME_DIR="$runtime_dir" DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime_dir/bus" growth-layer-agent --register-autostart >/dev/null 2>&1 || true
-            runuser -u "$real_user" -- env XDG_RUNTIME_DIR="$runtime_dir" DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime_dir/bus" setsid growth-layer-agent >/dev/null 2>&1 &
+            # `systemctl --user restart`, not a bare `setsid ... &`: see
+            # ../deb/postinst's doc comment for the full reasoning — a raw
+            # detached process is invisible to systemd, so every upgrade
+            # used to accumulate one more orphaned agent process racing
+            # the others to register the same tray icon, a real, user-hit
+            # cause of "sometimes no icon at all".
+            runuser -u "$real_user" -- env XDG_RUNTIME_DIR="$runtime_dir" DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime_dir/bus" systemctl --user restart GrowthLayerAgent.service >/dev/null 2>&1 || true
             echo "growth-layer-agent: started now — look for the tray icon (will also start automatically at next login)"
         else
             echo "growth-layer-agent: will start automatically at next login (no active desktop session detected right now to start it immediately)"

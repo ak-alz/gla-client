@@ -96,12 +96,28 @@ fn current_dark_background(event_loop: &ActiveEventLoop) -> bool {
     }
 }
 
-/// Linux: `tray-icon`'s backend here is GTK, whose own `Settings` already
-/// exposes the desktop's dark/light preference — queryable any time after
-/// `gtk::init()` has run (see `run_tray`'s Linux branch), no separate
-/// theme-detection crate needed.
+/// Linux: GTK's own `Settings` exposes `gtk-application-prefer-dark-theme`,
+/// queryable any time after `gtk::init()` has run (see `run_tray`'s Linux
+/// branch) — but that setting answers "does this user want dark
+/// APPLICATION windows", not "is the panel this tray icon sits in dark".
+/// On GNOME the two are unrelated: GNOME Shell's top bar CSS has been
+/// visually dark by default since GNOME 3.0, independent of the app-level
+/// preference — so on stock Ubuntu (light Yaru GTK theme, dark top bar)
+/// this setting reads `false` and the code picked the black mark, which
+/// then vanished into the real, dark bar. Found from an actual user
+/// installing on real Ubuntu, not a hypothetical. GNOME's panel color
+/// doesn't otherwise vary, so it's hardcoded here rather than guessed;
+/// other DEs (KDE/XFCE/Cinnamon) don't share this decoupling — their
+/// panel color genuinely does track the desktop-wide theme choice, so
+/// the GTK setting stays the right signal there.
 #[cfg(target_os = "linux")]
 fn current_dark_background() -> bool {
+    let is_gnome = std::env::var("XDG_CURRENT_DESKTOP")
+        .map(|v| v.to_lowercase().contains("gnome"))
+        .unwrap_or(false);
+    if is_gnome {
+        return true;
+    }
     gtk::Settings::default().map(|s| s.is_gtk_application_prefer_dark_theme()).unwrap_or(false)
 }
 
