@@ -22,7 +22,7 @@ license=('custom:proprietary')
 depends=('gtk3' 'glib2' 'gdk-pixbuf2' 'xdotool')
 makedepends=('cargo' 'clang')
 source=("$pkgname-$pkgver.tar.gz::https://github.com/ak-alz/gla-client/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('da2af89ddffc27c825ec4c0459243cce08e82de95cdfb903ef8b2429daa0e9f7')
+sha256sums=('591cda36c9c94cc3a7423557bb041edc1cd2222482877f247c7cf8e8d6ee3221')
 
 build() {
     cd "gla-client-$pkgver"
