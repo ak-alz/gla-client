@@ -46,9 +46,24 @@ start_agent() {
         chown "$real_user": "$real_home/.config/autostart/growth-layer-agent.desktop" 2>/dev/null || true
     fi
     if command -v runuser >/dev/null 2>&1; then
-        runuser -u "$real_user" -- growth-layer-agent --register-autostart >/dev/null 2>&1 || true
-        runuser -u "$real_user" -- setsid growth-layer-agent >/dev/null 2>&1 &
-        echo "growth-layer-agent: started now — look for the tray icon (will also start automatically at next login)"
+        # `runuser` alone hands the child none of the graphical session's
+        # environment — this .install script runs as root, which never
+        # had DISPLAY/DBUS_SESSION_BUS_ADDRESS to begin with. Tray icons
+        # register over the session D-Bus (StatusNotifierItem), so
+        # without forwarding this, the agent starts but has nowhere to
+        # put its icon — found by actually installing on a real desktop
+        # session, not a hypothetical. `/run/user/<uid>/bus` is the
+        # standard systemd-logind session bus socket, present only when
+        # that user has an active graphical login right now.
+        real_uid="$(id -u "$real_user" 2>/dev/null || true)"
+        runtime_dir="/run/user/$real_uid"
+        if [ -n "$real_uid" ] && [ -S "$runtime_dir/bus" ]; then
+            runuser -u "$real_user" -- env XDG_RUNTIME_DIR="$runtime_dir" DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime_dir/bus" growth-layer-agent --register-autostart >/dev/null 2>&1 || true
+            runuser -u "$real_user" -- env XDG_RUNTIME_DIR="$runtime_dir" DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime_dir/bus" setsid growth-layer-agent >/dev/null 2>&1 &
+            echo "growth-layer-agent: started now — look for the tray icon (will also start automatically at next login)"
+        else
+            echo "growth-layer-agent: will start automatically at next login (no active desktop session detected right now to start it immediately)"
+        fi
     fi
 }
 

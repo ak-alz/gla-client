@@ -76,9 +76,24 @@ if [ -n "$REAL_USER" ] && [ "$REAL_USER" != "root" ] && id "$REAL_USER" >/dev/nu
         chown "$REAL_USER": "$REAL_HOME/.config/autostart/growth-layer-agent.desktop" 2>/dev/null || true
     fi
     if command -v runuser >/dev/null 2>&1; then
-        runuser -u "$REAL_USER" -- growth-layer-agent --register-autostart >/dev/null 2>&1 || true
-        runuser -u "$REAL_USER" -- setsid growth-layer-agent >/dev/null 2>&1 &
-        echo "growth-layer-agent: started now — look for the tray icon (will also start automatically at next login)"
+        # `runuser` alone hands the child none of the graphical session's
+        # environment — this %post runs as root, which never had
+        # DISPLAY/DBUS_SESSION_BUS_ADDRESS to begin with. Tray icons
+        # register over the session D-Bus (StatusNotifierItem), so
+        # without forwarding this, the agent starts but has nowhere to
+        # put its icon — found by actually installing on a real desktop
+        # session, not a hypothetical. `/run/user/<uid>/bus` is the
+        # standard systemd-logind session bus socket, present only when
+        # that user has an active graphical login right now.
+        REAL_UID="$(id -u "$REAL_USER" 2>/dev/null || true)"
+        RUNTIME_DIR="/run/user/$REAL_UID"
+        if [ -n "$REAL_UID" ] && [ -S "$RUNTIME_DIR/bus" ]; then
+            runuser -u "$REAL_USER" -- env XDG_RUNTIME_DIR="$RUNTIME_DIR" DBUS_SESSION_BUS_ADDRESS="unix:path=$RUNTIME_DIR/bus" growth-layer-agent --register-autostart >/dev/null 2>&1 || true
+            runuser -u "$REAL_USER" -- env XDG_RUNTIME_DIR="$RUNTIME_DIR" DBUS_SESSION_BUS_ADDRESS="unix:path=$RUNTIME_DIR/bus" setsid growth-layer-agent >/dev/null 2>&1 &
+            echo "growth-layer-agent: started now — look for the tray icon (will also start automatically at next login)"
+        else
+            echo "growth-layer-agent: will start automatically at next login (no active desktop session detected right now to start it immediately)"
+        fi
     fi
 else
     echo "growth-layer-agent: could not determine the real user to grant 'input' group access to — run manually: sudo usermod -aG input \$USER, then log out and back in"
