@@ -4,5 +4,5 @@
   "description": "Exposes the currently focused window's application id over D-Bus (org.growthlayer.AgentHelper on the org.gnome.Shell connection) so the Growth Layer desktop agent can attribute activity to an app on GNOME. Never exposes window titles, keystrokes, or pointer coordinates -- only which app is focused, mirroring the same narrow contract the agent already uses on X11/Hyprland/Windows/macOS.",
   "url": "https://github.com/ak-alz/gla-client",
   "version-name": "1.0",
-  "shell-version": ["45", "46", "47", "48"]
+  "shell-version": ["45", "46", "47", "48", "49", "50", "51", "52"]
 }
