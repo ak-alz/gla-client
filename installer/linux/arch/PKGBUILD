@@ -8,24 +8,34 @@
 # a variant of either. See also ../tarball/ for a package-manager-free
 # alternative that also works on Arch (and everywhere else).
 #
-# `sha256sums` below was computed from the real v$pkgver tag tarball
-# (`sha256sum` on the file GitHub's codeload actually serves for that
-# tag) — regenerate it whenever pkgver is bumped, a stale checksum is a
-# guaranteed makepkg failure, not a formality.
-pkgname=growth-layer-agent
-pkgver=0.1.3
+# Builds from `main`'s HEAD (a real git source, not a release tag) —
+# NOT a stylistic choice, a fix for a bug hit twice in one week: a
+# pinned tag silently misses whatever landed after it was cut (icons,
+# then the release-vs-debug config-default fix) unless someone remembers
+# to bump and re-tag every single time. Tracking HEAD makes that whole
+# class of staleness structurally impossible — makepkg always builds
+# whatever is actually on main right now.
+pkgname=growth-layer-agent-git
+pkgver=r1.0000000
 pkgrel=1
 pkgdesc="Lightweight per-user desktop agent that collects activity signals for the Growth Layer product"
 arch=('x86_64')
 url="https://github.com/ak-alz/gla-client"
 license=('custom:proprietary')
 depends=('gtk3' 'glib2' 'gdk-pixbuf2' 'xdotool')
-makedepends=('cargo' 'clang')
-source=("$pkgname-$pkgver.tar.gz::https://github.com/ak-alz/gla-client/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('591cda36c9c94cc3a7423557bb041edc1cd2222482877f247c7cf8e8d6ee3221')
+makedepends=('cargo' 'clang' 'git')
+provides=('growth-layer-agent')
+conflicts=('growth-layer-agent')
+source=("$pkgname::git+$url.git")
+sha256sums=('SKIP')
+
+pkgver() {
+    cd "$pkgname"
+    printf 'r%s.%s' "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+}
 
 build() {
-    cd "gla-client-$pkgver"
+    cd "$pkgname"
     # `ring` (pulled in transitively for TLS) fails to link its hand-
     # written assembly against Arch's current gcc — every crypto symbol
     # in it comes back "undefined symbol" (reproduced for real in a
@@ -36,7 +46,7 @@ build() {
 }
 
 package() {
-    cd "gla-client-$pkgver"
+    cd "$pkgname"
 
     install -Dm755 "target/release/growth-layer-agent" \
         "$pkgdir/usr/bin/growth-layer-agent"
