@@ -20,6 +20,7 @@
 //! `browser.rs`'s doc comment for the full reasoning), not an oversight.
 
 mod browser;
+mod icons;
 mod menu_model;
 mod status;
 mod tray;

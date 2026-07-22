@@ -12,6 +12,7 @@
 //! a webview window, which sidesteps the ~353 MB Tauri-hidden-window
 //! regression ADR 0013 documents entirely, by construction.
 
+use crate::icons::TrayIcons;
 use crate::menu_model::{build_menu, MenuAction, MenuEntry};
 use crate::status::AgentStatus;
 use std::collections::HashMap;
@@ -27,6 +28,12 @@ use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 #[cfg(not(target_os = "linux"))]
 use winit::window::WindowId;
+// Brings `GtkSettingsExt::is_gtk_application_prefer_dark_theme` into
+// scope for `current_dark_background()` below — gtk-rs, like most
+// gobject-based crates, puts its trait methods behind a `prelude`
+// glob import rather than inherent methods.
+#[cfg(target_os = "linux")]
+use gtk::prelude::*;
 
 /// The seam between this crate's tray plumbing and whatever process
 /// actually drives the collector/queue/uploader (a future integration
@@ -54,23 +61,48 @@ pub trait AgentController: Send + Sync + 'static {
 /// currently open" (which tray-icon/winit don't expose portably).
 const REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 
-fn make_icon(active: bool) -> Icon {
-    // 16x16 solid-color RGBA icon generated in code, no external asset —
-    // same approach already benchmarked in AG-002's rust-tray prototype.
-    // Blue while actively syncing; gray whenever paused OR unpaired, so
-    // the pause state is visible from the icon alone, not only from
-    // opening the menu (the "Pause status заметен" acceptance criterion).
-    let size = 16u32;
-    let color = if active {
-        [80u8, 140, 255, 255]
-    } else {
-        [140u8, 140, 140, 255]
-    };
-    let mut rgba = Vec::with_capacity((size * size * 4) as usize);
-    for _ in 0..(size * size) {
-        rgba.extend_from_slice(&color);
+// Real brand-mark tray icon (icons.rs), replacing the earlier
+// programmatically generated solid-color square. `active` still controls
+// visibility of pause state (the "Pause status заметен" acceptance
+// criterion) — via alpha dimming on the SAME monochrome mark, not a hue
+// change (see icons.rs's doc comment for why: DESIGN_GUIDE.md never
+// permits color-coding status on the 16px mark).
+fn build_icon(icons: &TrayIcons, dark_background: bool, active: bool) -> Icon {
+    let rgba = icons.rgba_for(dark_background, /* dim = */ !active);
+    Icon::from_rgba(rgba, crate::icons::SIZE, crate::icons::SIZE)
+        .expect("decoded tray PNG is always a valid icon buffer")
+}
+
+/// Whether the tray/menu-bar background the icon sits on should be
+/// treated as dark (pick the white mark) vs light (pick the black mark).
+///
+/// **macOS** deliberately ignores this and always renders the black mark
+/// as a template image (`with_icon_as_template`/`set_icon_with_as_template`
+/// below) — macOS itself recolors template images for the current
+/// appearance, which is more robust than this crate guessing, and is the
+/// idiomatic mechanism for exactly this on macOS. `event_loop` is
+/// therefore unused on macOS, kept only so the call site stays uniform
+/// across both platforms sharing this winit-based branch.
+#[cfg(not(target_os = "linux"))]
+fn current_dark_background(event_loop: &ActiveEventLoop) -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        matches!(event_loop.system_theme(), Some(winit::window::Theme::Dark))
     }
-    Icon::from_rgba(rgba, size, size).expect("16x16 RGBA buffer is always a valid icon")
+    #[cfg(target_os = "macos")]
+    {
+        let _ = event_loop;
+        false
+    }
+}
+
+/// Linux: `tray-icon`'s backend here is GTK, whose own `Settings` already
+/// exposes the desktop's dark/light preference — queryable any time after
+/// `gtk::init()` has run (see `run_tray`'s Linux branch), no separate
+/// theme-detection crate needed.
+#[cfg(target_os = "linux")]
+fn current_dark_background() -> bool {
+    gtk::Settings::default().map(|s| s.is_gtk_application_prefer_dark_theme()).unwrap_or(false)
 }
 
 struct BuiltMenu {
@@ -109,6 +141,12 @@ fn build_native_menu(entries: &[MenuEntry]) -> BuiltMenu {
 struct App {
     controller: Arc<dyn AgentController>,
     tray: TrayIcon,
+    icons: TrayIcons,
+    // Last theme the tray icon was actually rendered for — compared
+    // against on each refresh (alongside active/paused) so the icon is
+    // only rebuilt when something about it would actually change, not on
+    // every 5-second tick unconditionally.
+    dark_background: bool,
     items: Vec<MenuItem>,
     // (action, enabled) per entry, in order — the STRUCTURAL shape of the
     // currently-displayed menu, as opposed to its text. Compared against
@@ -138,7 +176,7 @@ impl App {
     /// count, only its text does). Otherwise patch each existing item's
     /// text in place via `set_text`, keeping the same ids a click made
     /// against the on-screen menu at any point will still resolve against.
-    fn refresh(&mut self) {
+    fn refresh(&mut self, dark_background: bool) {
         let status = self.controller.status();
         let entries = build_menu(&status, chrono::Utc::now());
         let shape: Vec<(Option<MenuAction>, bool)> =
@@ -158,9 +196,20 @@ impl App {
 
         let is_active = status.paired && !status.is_paused;
         let was_active = self.last_status.paired && !self.last_status.is_paused;
-        if is_active != was_active {
-            let _ = self.tray.set_icon(Some(make_icon(is_active)));
+        if is_active != was_active || dark_background != self.dark_background {
+            let icon = build_icon(&self.icons, dark_background, is_active);
+            // macOS: the combined setter is the only one that actually
+            // re-applies the icon there when template mode is on (the
+            // plain `set_icon` risks silently no-op'ing/resetting it per
+            // tray-icon's own doc comment on `set_icon_as_template`).
+            // Elsewhere, that combined setter is a documented no-op, so
+            // the plain `set_icon` is the one that must be used instead.
+            #[cfg(target_os = "macos")]
+            let _ = self.tray.set_icon_with_as_template(Some(icon), true);
+            #[cfg(not(target_os = "macos"))]
+            let _ = self.tray.set_icon(Some(icon));
         }
+        self.dark_background = dark_background;
         self.last_status = status;
     }
 
@@ -174,7 +223,13 @@ impl App {
         match action {
             MenuAction::ToggleActive => {
                 self.controller.toggle_active();
-                self.refresh();
+                // Reuse the last-known theme rather than re-detecting —
+                // an action-triggered refresh only needs to reflect the
+                // status change; the periodic tick (which DOES
+                // re-detect) catches up on any real theme change within
+                // REFRESH_INTERVAL regardless.
+                let dark_background = self.dark_background;
+                self.refresh(dark_background);
                 false
             }
             MenuAction::OpenDiagnostics => {
@@ -232,11 +287,19 @@ impl ApplicationHandler for App {
             }
         }
 
-        self.refresh();
+        self.refresh(current_dark_background(event_loop));
     }
 }
 
-fn build_app(controller: Arc<dyn AgentController>) -> Result<App, Box<dyn std::error::Error>> {
+/// `dark_background`: best guess available to the CALLER at this point —
+/// Windows has no winit event loop yet to query, so it passes a default
+/// that the first `about_to_wait` tick corrects for real; Linux already
+/// has real GTK settings by the time it calls this (see `run_tray`'s
+/// Linux branch); macOS ignores the value entirely (template image mode).
+fn build_app(
+    controller: Arc<dyn AgentController>,
+    dark_background: bool,
+) -> Result<App, Box<dyn std::error::Error>> {
     let initial_status = controller.status();
     let is_active = initial_status.paired && !initial_status.is_paused;
 
@@ -244,15 +307,26 @@ fn build_app(controller: Arc<dyn AgentController>) -> Result<App, Box<dyn std::e
     let entry_shape = entries.iter().map(|e| (e.action, e.enabled)).collect();
     let built = build_native_menu(&entries);
 
+    let icons = TrayIcons::load();
+    let icon = build_icon(&icons, dark_background, is_active);
+
+    // `with_icon_as_template` is a plain cross-platform builder method
+    // whose effect is macOS-only (verified in tray-icon's own source —
+    // the Windows/GTK backends never read this attribute at all, so
+    // calling it elsewhere is a harmless no-op, not something that needs
+    // its own cfg-gate here).
     let tray = TrayIconBuilder::new()
         .with_menu(Box::new(built.menu))
         .with_tooltip("Growth Layer")
-        .with_icon(make_icon(is_active))
+        .with_icon(icon)
+        .with_icon_as_template(true)
         .build()?;
 
     Ok(App {
         controller,
         tray,
+        icons,
+        dark_background,
         items: built.items,
         entry_shape,
         action_by_id: built.action_by_id,
@@ -269,7 +343,12 @@ fn build_app(controller: Arc<dyn AgentController>) -> Result<App, Box<dyn std::e
 /// открытого UI").
 #[cfg(not(target_os = "linux"))]
 pub fn run_tray(controller: Arc<dyn AgentController>) -> Result<(), Box<dyn std::error::Error>> {
-    let mut app = build_app(controller)?;
+    // No winit event loop exists yet at this point to query the real
+    // system theme from (see `current_dark_background`'s doc comment) —
+    // start with a light-background assumption; the first
+    // `about_to_wait` tick (within REFRESH_INTERVAL) corrects it for real
+    // on Windows. macOS never uses this value (template image mode).
+    let mut app = build_app(controller, /* dark_background = */ false)?;
     let event_loop = EventLoop::new()?;
     event_loop.set_control_flow(ControlFlow::Wait);
     event_loop.run_app(&mut app)?;
@@ -296,7 +375,11 @@ pub fn run_tray(controller: Arc<dyn AgentController>) -> Result<(), Box<dyn std:
 
     gtk::init()?;
 
-    let app = Rc::new(RefCell::new(build_app(controller)?));
+    // Real GTK settings already queryable here (unlike Windows/macOS,
+    // which have no theme signal before their event loop starts) — the
+    // very first icon is correct immediately, no post-launch correction
+    // tick needed.
+    let app = Rc::new(RefCell::new(build_app(controller, current_dark_background())?));
 
     let timer_app = Rc::clone(&app);
     glib::source::timeout_add_local(REFRESH_INTERVAL, move || {
@@ -309,7 +392,7 @@ pub fn run_tray(controller: Arc<dyn AgentController>) -> Result<(), Box<dyn std:
                 }
             }
         }
-        app.refresh();
+        app.refresh(current_dark_background());
         glib::ControlFlow::Continue
     });
 

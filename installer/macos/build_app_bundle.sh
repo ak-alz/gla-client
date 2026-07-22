@@ -24,8 +24,18 @@ chmod +x "$CONTENTS/MacOS/growth-layer-agent"
 cp "$SCRIPT_DIR/Info.plist" "$CONTENTS/Info.plist"
 cp "$SCRIPT_DIR/com.growthlayer.agent.plist" "$CONTENTS/Library/LaunchAgents/com.growthlayer.agent.plist"
 
-# AppIcon.icns is deliberately not generated here -- no design asset
-# exists yet in this repo; Info.plist's CFBundleIconFile reference is
-# harmless without it (macOS falls back to a generic app icon).
+# AppIcon.icns, generated from the real brand-mark AppIcon.iconset
+# (Growth-Layer-Brand-Assets-v1.0/app/macos/AppIcon.iconset, committed
+# alongside this script) via `iconutil` -- a macOS-only tool, so this
+# step, like the rest of this script, has not been exercised on real
+# hardware (same honest limitation noted in the module header). Info.plist
+# already declares CFBundleIconFile=AppIcon.icns; before this the
+# reference was harmless-but-dangling (no design asset existed yet) and
+# macOS fell back to a generic app icon -- that gap is what this closes.
+if command -v iconutil >/dev/null 2>&1; then
+    iconutil -c icns "$SCRIPT_DIR/AppIcon.iconset" -o "$CONTENTS/Resources/AppIcon.icns"
+else
+    echo "warning: iconutil not found (only ships with macOS) -- AppIcon.icns not generated, app will use a generic icon" >&2
+fi
 
 echo "built $APP_BUNDLE (unsigned, unnotarized -- see codesign_and_notarize.sh)"

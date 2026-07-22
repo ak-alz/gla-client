@@ -1,0 +1,14 @@
+// Embeds the real brand-mark app icon into growth-layer-agent.exe (see
+// build.rs). Windows shows this in Explorer, the taskbar, and the Start
+// Menu shortcut/uninstall entry agent.iss already points at the exe's
+// own icon resource for (UninstallDisplayIcon={app}\{#MyAppExeName}) --
+// so this one resource fixes all of those surfaces at once, not just one.
+//
+// growth-layer-agent.ico is a byte-for-byte copy of
+// installer/windows/assets/growth-layer-agent.ico (both trace back to
+// Growth-Layer-Brand-Assets-v1.0/app/windows/growth-layer.ico) --
+// duplicated here rather than referenced by a cross-repo relative path
+// because RC-compiler path resolution (llvm-rc/windres/rc.exe all
+// resolve slightly differently) is exactly the kind of thing not worth
+// being clever about for a 608-byte file.
+1 ICON "growth-layer-agent.ico"

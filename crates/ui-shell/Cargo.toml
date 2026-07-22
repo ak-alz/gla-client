@@ -12,6 +12,12 @@ tray-icon = "0.19"
 winit = "0.30"
 open = "5"
 thiserror = "1"
+# Decodes the embedded brand-mark tray PNGs (icons.rs) into the raw RGBA
+# buffers Icon::from_rgba needs — already resolved in Cargo.lock at this
+# exact version (tray-icon's own Windows/macOS icon loading pulls it in
+# transitively), so this adds zero new download, just makes an
+# already-present crate directly usable from this crate's own code.
+png = "0.17"
 
 # tray-icon's Linux backend is GTK-based and needs the caller to drive a
 # real GTK main loop (`gtk::init`/`gtk::main`) — winit does not do this

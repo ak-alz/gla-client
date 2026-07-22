@@ -49,3 +49,11 @@ signal-hook = "0.3"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 macos-collector = { path = "../macos-collector" }
+
+[build-dependencies]
+# Embeds the real brand-mark app icon into growth-layer-agent.exe (see
+# build.rs + assets/app.rc) — a documented no-op on non-Windows targets
+# (verified in its own source), so kept unconditional rather than
+# target-gated: that matches the crate's own idiomatic usage and avoids
+# build.rs needing its own platform cfg-gating just to reference it.
+embed-resource = "3.0"
