@@ -1,0 +1,36 @@
+# Runs as root via pacman (invoked through `makepkg -si`, typically
+# itself run via sudo). The one real, root-only thing worth doing at
+# install time — see ../deb/postinst's doc comment for the full
+# reasoning this mirrors exactly: without `input`-group membership,
+# `/dev/input/event*` can never be opened and keyboard/mouse activity is
+# silently, permanently counted as zero.
+grant_input_group() {
+    real_user="${SUDO_USER:-}"
+    if [ -z "$real_user" ] || [ "$real_user" = "root" ]; then
+        real_user="$(logname 2>/dev/null || true)"
+    fi
+    if [ -n "$real_user" ] && [ "$real_user" != "root" ] && id "$real_user" >/dev/null 2>&1; then
+        # `usermod -aG input` fails SILENTLY if the group doesn't exist
+        # yet — found by actually testing on a bare container, not a
+        # hypothetical (Arch's own base/udev normally creates it, but
+        # this costs nothing as a defensive fallback).
+        if ! getent group input >/dev/null 2>&1; then
+            groupadd -r input 2>/dev/null || true
+        fi
+        if usermod -aG input "$real_user" 2>/dev/null; then
+            echo "growth-layer-agent: added '$real_user' to the 'input' group (log out and back in, or reboot, for this to take effect — needed for keyboard/mouse activity to be counted at all)"
+        else
+            echo "growth-layer-agent: could not add '$real_user' to the 'input' group — run manually: sudo usermod -aG input $real_user, then log out and back in"
+        fi
+    else
+        echo "growth-layer-agent: could not determine the real user to grant 'input' group access to — run manually: sudo usermod -aG input \$USER, then log out and back in"
+    fi
+}
+
+post_install() {
+    grant_input_group
+}
+
+post_upgrade() {
+    grant_input_group
+}

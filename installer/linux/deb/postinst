@@ -1,0 +1,51 @@
+#!/bin/sh
+# Runs as root during `dpkg -i`/`apt install`. The ONLY thing this
+# actually does: add the real installing user to the `input` group,
+# without which `/dev/input/event*` can never be opened and keyboard/
+# mouse activity is silently, permanently counted as zero (see
+# linux-collector::evdev_counter's own doc comment — this crate never
+# escalates privilege itself by design, so if nobody grants this at
+# install time, no user ever finds out why "activity isn't tracked" —
+# a real, user-hit bug this closes instead of leaving undiscoverable).
+# Tray icon appearing at all is a separate concern (desktop-environment
+# AppIndicator support) — see the package's `Recommends:` for that half.
+set -e
+
+if [ "$1" != "configure" ]; then
+    exit 0
+fi
+
+# The real logged-in user, not root: `apt`/`dpkg` run this as root, but
+# `$SUDO_USER` (set by sudo, which is how virtually every desktop user
+# actually invokes an install) names who's really sitting at the
+# keyboard. Falls back to `logname` (the controlling terminal's login
+# user) if `$SUDO_USER` is unset — e.g. a root shell with no sudo
+# involved. If neither resolves to a real, non-root account, this is
+# skipped rather than guessed — silently granting the wrong account
+# input-group membership would be a worse outcome than just not doing it.
+REAL_USER="${SUDO_USER:-}"
+if [ -z "$REAL_USER" ] || [ "$REAL_USER" = "root" ]; then
+    REAL_USER="$(logname 2>/dev/null || true)"
+fi
+
+if [ -n "$REAL_USER" ] && [ "$REAL_USER" != "root" ] && id "$REAL_USER" >/dev/null 2>&1; then
+    # Every mainstream desktop distro creates this group via udev's own
+    # default rules — but `usermod -aG input` fails SILENTLY (no error
+    # printed, condition just false) if it somehow doesn't exist yet
+    # (found by actually testing on a bare container with no udev
+    # installed, not a hypothetical) — create it defensively rather than
+    # let that turn into "no message at all," which is worse than either
+    # a success or a failure message.
+    if ! getent group input >/dev/null 2>&1; then
+        groupadd -r input 2>/dev/null || true
+    fi
+    if command -v usermod >/dev/null 2>&1 && usermod -aG input "$REAL_USER" 2>/dev/null; then
+        echo "growth-layer-agent: added '$REAL_USER' to the 'input' group (log out and back in, or reboot, for this to take effect — needed for keyboard/mouse activity to be counted at all)"
+    else
+        echo "growth-layer-agent: could not add '$REAL_USER' to the 'input' group — run manually: sudo usermod -aG input $REAL_USER, then log out and back in"
+    fi
+else
+    echo "growth-layer-agent: could not determine the real user to grant 'input' group access to — run manually: sudo usermod -aG input \$USER, then log out and back in"
+fi
+
+exit 0

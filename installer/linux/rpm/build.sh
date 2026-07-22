@@ -23,6 +23,7 @@ rpmbuild \
     --define "_topdir $RPMBUILD_ROOT" \
     --define "_agent_version $VERSION" \
     --define "_agent_bin_path $BIN_PATH" \
+    --define "_agent_core_dir $AGENT_CORE_DIR" \
     -bb "$SCRIPT_DIR/growth-layer-agent.spec"
 
 mkdir -p "$OUT_DIR"

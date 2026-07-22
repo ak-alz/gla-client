@@ -21,6 +21,7 @@ VERSION="${1:-$(grep -m1 '^version' "$AGENT_CORE_DIR/crates/agent-bin/Cargo.toml
 TARGET_DIR="${CARGO_TARGET_DIR:-$AGENT_CORE_DIR/target}"
 BIN_PATH="${AGENT_BIN_PATH:-$TARGET_DIR/release/growth-layer-agent}"
 OUT_DIR="${OUT_DIR:-$SCRIPT_DIR/dist}"
+ICONS_DIR="$AGENT_CORE_DIR/installer/linux/icons/hicolor"
 
 if [ ! -x "$BIN_PATH" ]; then
     echo "error: release binary not found at $BIN_PATH (build with: cargo build --release -p agent-bin)" >&2
@@ -35,17 +36,26 @@ cp "$BIN_PATH" "$STAGE/usr/bin/growth-layer-agent"
 chmod 755 "$STAGE/usr/bin/growth-layer-agent"
 strip "$STAGE/usr/bin/growth-layer-agent"
 
-# No postinst/prerm: there is nothing for a root-run maintainer script
-# to correctly do here. Autostart is a per-user systemd --user unit the
-# agent registers itself from a real user session (see
-# lifecycle::Autostart) — unreachable from a root postinst anyway — and
-# unlike Windows (agent.iss's [Code] must taskkill the old process
-# before an upgrade can even overwrite its locked .exe), Linux lets a
-# package replace an in-use executable file; the running process keeps
-# executing the old inode's pages from memory until it next restarts,
-# so upgrade/removal never needs to touch a running instance. An empty
-# script is exactly the shape lintian's maintainer-script-empty check
-# is warning you to avoid, not something to keep and re-comment.
+for size_dir in "$ICONS_DIR"/*/; do
+    size="$(basename "$size_dir")"
+    mkdir -p "$STAGE/usr/share/icons/hicolor/$size/apps"
+    cp "$size_dir/apps/growth-layer-agent.png" "$STAGE/usr/share/icons/hicolor/$size/apps/growth-layer-agent.png"
+done
+mkdir -p "$STAGE/usr/share/applications"
+sed "s|%INSTALL_BIN%|/usr/bin/growth-layer-agent|" \
+    "$AGENT_CORE_DIR/installer/linux/tarball/growth-layer-agent.desktop" \
+    > "$STAGE/usr/share/applications/growth-layer-agent.desktop"
+
+# postinst: the one real, root-only thing worth doing at install time —
+# see postinst's own header comment for why this replaces the earlier
+# "nothing for a maintainer script to correctly do here" position (true
+# before input-count support existed; no longer true — a fresh install's
+# real user isn't in the `input` group by default on any mainstream
+# distro, and evdev opening then fails PERMANENTLY-SILENTLY, see
+# linux-collector::evdev_counter's own doc comment — a real, user-hit
+# bug this closes at install time instead of leaving undiscoverable).
+cp "$SCRIPT_DIR/postinst" "$STAGE/DEBIAN/postinst"
+chmod 755 "$STAGE/DEBIAN/postinst"
 
 cat > "$STAGE/usr/share/doc/growth-layer-agent/copyright" <<'EOF'
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
@@ -106,11 +116,18 @@ Priority: optional
 Architecture: amd64
 Maintainer: Growth Layer Packaging <packaging@growth-layer.local>
 Depends: $SHLIBS_DEPENDS
+Recommends: gnome-shell-extension-appindicator
 Description: Growth Layer desktop agent
  Lightweight per-user desktop agent that collects activity signals for
  the Growth Layer product. Runs entirely in user space; never requires
  root at runtime. See AG-LNX-003 in
  CROSS_PLATFORM_LIGHTWEIGHT_CLIENT_AUTOPILOT.md.
+ .
+ Recommends gnome-shell-extension-appindicator: needed for the tray icon
+ to appear at all on stock GNOME (Debian's default desktop does not
+ bundle AppIndicator support the way Ubuntu's GNOME does) — a soft
+ dependency since KDE/XFCE/Cinnamon/etc. already have native tray
+ support and don't need it.
 EOF
 
 mkdir -p "$OUT_DIR"

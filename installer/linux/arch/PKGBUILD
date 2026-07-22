@@ -24,10 +24,12 @@ url="https://github.com/ak-alz/gla-client"
 license=('custom:proprietary')
 depends=('gtk3' 'glib2' 'gdk-pixbuf2' 'xdotool')
 makedepends=('cargo' 'clang' 'git')
+optdepends=('gnome-shell-extension-appindicator: tray icon on stock GNOME (KDE/XFCE/Cinnamon already have native tray support)')
 provides=('growth-layer-agent')
 conflicts=('growth-layer-agent')
 source=("$pkgname::git+$url.git")
 sha256sums=('SKIP')
+install=growth-layer-agent-git.install
 
 pkgver() {
     cd "$pkgname"

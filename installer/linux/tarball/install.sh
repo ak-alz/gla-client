@@ -62,3 +62,27 @@ fi
 # is the only entry point, exactly as on Windows). Only reached once the
 # binary is confirmed runnable (see the ldd check above).
 "$BIN_DIR/growth-layer-agent" --register-autostart || true
+
+# Without this, `/dev/input/event*` can never be opened and keyboard/
+# mouse activity is silently, permanently counted as zero (see
+# linux-collector::evdev_counter's own doc comment) — a real bug this
+# closes at install time instead of leaving undiscoverable. Run as the
+# real user already (unlike a .deb/.rpm postinst, no $SUDO_USER
+# detection needed — `$USER` here already IS the real user), `sudo` only
+# for the one privileged step. `-n` (non-interactive) first so a
+# passwordless-sudo setup doesn't need to explain itself; falls back to
+# an interactive prompt only if that fails.
+if ! groups "$USER" 2>/dev/null | grep -qw input; then
+    # `usermod -aG input` fails if the group doesn't exist yet — found
+    # by actually testing on a bare container with no udev installed,
+    # not a hypothetical (every mainstream desktop distro creates it by
+    # default, but this costs nothing as a defensive fallback).
+    if ! getent group input >/dev/null 2>&1; then
+        sudo -n groupadd -r input 2>/dev/null || sudo groupadd -r input 2>/dev/null || true
+    fi
+    if sudo -n usermod -aG input "$USER" 2>/dev/null || sudo usermod -aG input "$USER"; then
+        echo "added '$USER' to the 'input' group (log out and back in, or reboot, for this to take effect)"
+    else
+        echo "warning: could not add '$USER' to the 'input' group — run manually: sudo usermod -aG input \$USER, then log out and back in"
+    fi
+fi
