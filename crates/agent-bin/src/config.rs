@@ -4,12 +4,26 @@
 //! much larger concern than "does the installer/packaging story work,"
 //! which is this task's actual scope. What's here is exactly the two
 //! things this binary cannot function without: where to upload to, and
-//! what to authenticate with. Both default to values that only work for
-//! local development (matching `agent/config.yaml`'s own committed
-//! defaults) — a real deployment is expected to write a real
-//! `config.json` into the data directory (see `paths::data_dir`), the
-//! same way `agent/core/pairing.py` writes `exports/device_credentials.json`
-//! for the Python MVP today.
+//! what to authenticate with.
+//!
+//! Defaults are chosen by `#[cfg(debug_assertions)]`, i.e. by Cargo's
+//! build profile — NOT by an env var or a separate config file, so it's
+//! structurally impossible to forget: `cargo run`/`cargo test`/plain
+//! `cargo build` (debug profile) default to localhost, matching
+//! `agent/config.yaml`'s own dev defaults, for local development against
+//! a local backend+frontend. `cargo build --release` — what every real
+//! installer/package (`installer/windows/agent.iss`, `installer/linux/
+//! deb`, `installer/linux/rpm`, `installer/linux/tarball`, `installer/
+//! linux/arch/PKGBUILD`) actually invokes — defaults to the real
+//! production endpoints instead, so a freshly installed client talks to
+//! devpace.ru out of the box, without anyone needing to hand-edit
+//! `config.json` after install (see git history: that was the actual,
+//! real gap that prompted this).
+//!
+//! A real deployment can still override either value by writing its own
+//! `config.json` into the data directory (see `paths::data_dir`) before
+//! first launch — these are only the values used when no such file (or
+//! no such field in it) exists yet.
 //!
 //! The real device-authorization pairing flow (`pairing.rs`) persists a
 //! newly-obtained `agent_token` back into this same file via
@@ -22,9 +36,9 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
-    /// Matches `agent/config.yaml`'s own local-dev default exactly —
-    /// this is not a production endpoint, just the same placeholder the
-    /// Python MVP ships with.
+    /// See module doc comment — debug builds default to the local-dev
+    /// placeholder, release builds (what every real installer produces)
+    /// default to the real production API.
     #[serde(default = "default_backend_url")]
     pub backend_url: String,
     /// Empty means "not yet paired" — the uploader will get a real,
@@ -41,12 +55,24 @@ pub struct Config {
     pub dashboard_url: String,
 }
 
+#[cfg(debug_assertions)]
 fn default_backend_url() -> String {
     "http://localhost:8000".to_string()
 }
 
+#[cfg(not(debug_assertions))]
+fn default_backend_url() -> String {
+    "https://api.devpace.ru".to_string()
+}
+
+#[cfg(debug_assertions)]
 fn default_dashboard_url() -> String {
     "http://localhost:5173".to_string()
+}
+
+#[cfg(not(debug_assertions))]
+fn default_dashboard_url() -> String {
+    "https://devpace.ru".to_string()
 }
 
 impl Default for Config {
