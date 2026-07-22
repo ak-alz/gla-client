@@ -43,7 +43,7 @@
 ;   CA-issued Authenticode certificate).
 
 #define MyAppName "Growth Layer Agent"
-#define MyAppVersion "0.1.10"
+#define MyAppVersion "0.1.11"
 #define MyAppPublisher "Growth Layer"
 #define MyAppExeName "growth-layer-agent.exe"
 

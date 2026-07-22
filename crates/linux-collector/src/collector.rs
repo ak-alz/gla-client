@@ -124,6 +124,34 @@ impl SignalCollector for LinuxSignalCollector {
         let (keyboard_events, mouse_move_events, mouse_click_events) =
             self.input_counters.take_and_reset();
 
+        // Retry the GNOME extension probe on every poll while it's the
+        // known-missing reason -- `start()` only gets one shot at this,
+        // but the agent commonly starts via autostart at the exact
+        // moment GNOME Shell itself is still loading extensions after
+        // login, a real race with no guaranteed ordering (found by
+        // actually installing on a real machine: the extension reported
+        // ACTIVE and answered a manual D-Bus call correctly minutes
+        // after the agent had already started and permanently cached
+        // "unsupported" for that run). A single failed probe at startup
+        // must not mean "unsupported for this entire run" when the
+        // extension keeps genuinely working once it finishes loading.
+        // The D-Bus round trip this costs (one call, only while
+        // genuinely unsupported for this specific reason) is negligible
+        // next to `POLL_INTERVAL`.
+        if matches!(
+            self.source,
+            Some(ActiveWindowSource::Unsupported(
+                UnsupportedReason::GnomeRequiresShellExtension
+            ))
+        ) {
+            if let Some(session) = GnomeExtensionSession::connect()
+                .ok()
+                .filter(|session| session.focused_window_pid().is_ok())
+            {
+                self.source = Some(ActiveWindowSource::GnomeExtension(session));
+            }
+        }
+
         let (active_process_name, idle_seconds) = match &self.source {
             Some(ActiveWindowSource::X11(session)) => {
                 let pid = session.active_window_pid().ok().flatten();
