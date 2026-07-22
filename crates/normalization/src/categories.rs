@@ -66,6 +66,69 @@ const DEFAULT_CATEGORY_MAP: &[(&str, &str)] = &[
     ("vlc.exe", "media"),
     // Games
     ("steam.exe", "games"),
+
+    // --- Linux equivalents ---
+    // The table above is a direct port of the original Windows-only
+    // Python source (see module doc comment) and never gained Linux
+    // process names at all -- meaning EVERY Linux process fell through
+    // to "other" regardless of what it actually was, confirmed live:
+    // a real Ubuntu install reported "chrome"/"ptyxis" once process-name
+    // resolution started working (AG-LNX-002/the GNOME extension), and
+    // both landed in "other" until these entries existed. `/proc/<pid>/
+    // comm` is truncated to 15 characters by the kernel (`TASK_COMM_LEN`
+    // is 16 bytes including the NUL) -- entries below use the actual
+    // truncated form where a real binary name exceeds that, not the
+    // full name, since that truncated string is exactly what this
+    // function receives and compares against.
+    // Browsers
+    ("chrome", "browser"),
+    ("firefox", "browser"),
+    ("firefox-bin", "browser"),
+    ("brave", "browser"),
+    ("chromium", "browser"),
+    ("chromium-browse", "browser"), // truncated "chromium-browser"
+    ("opera", "browser"),
+    ("vivaldi-bin", "browser"),
+    // IDE / development
+    ("code", "ide"), // VS Code
+    ("code-oss", "ide"),
+    ("codium", "ide"), // VSCodium
+    ("pycharm", "ide"),
+    ("idea", "ide"), // IntelliJ IDEA
+    ("clion", "ide"),
+    ("goland", "ide"),
+    ("webstorm", "ide"),
+    ("rider", "ide"),
+    ("phpstorm", "ide"),
+    ("datagrip", "ide"),
+    ("rubymine", "ide"),
+    ("sublime_text", "ide"),
+    // Terminals
+    ("ptyxis", "terminal"), // GNOME's current default terminal (GNOME 46+)
+    ("gnome-terminal-", "terminal"), // truncated "gnome-terminal-server"
+    ("konsole", "terminal"),
+    ("xterm", "terminal"),
+    ("alacritty", "terminal"),
+    ("kitty", "terminal"),
+    ("terminator", "terminal"),
+    ("tilix", "terminal"),
+    ("xfce4-terminal", "terminal"),
+    ("urxvt", "terminal"),
+    // Communication
+    ("slack", "communication"),
+    ("discord", "communication"),
+    ("telegram-deskt", "communication"), // truncated "telegram-desktop"
+    ("thunderbird", "communication"),
+    ("teams-for-linux", "communication"),
+    ("zoom", "communication"),
+    ("skypeforlinux", "communication"),
+    // Office / documents
+    ("soffice.bin", "office"), // LibreOffice's actual process name
+    // Media
+    ("vlc", "media"),
+    ("spotify", "media"),
+    // Games
+    ("steam", "games"),
 ];
 
 pub const UNKNOWN_CATEGORY: &str = "other";

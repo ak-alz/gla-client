@@ -67,6 +67,15 @@ fn categorize_matches_python_for_every_golden_case() {
 
 #[test]
 fn processes_for_category_matches_python() {
+    // A subset check, not exact equality: `DEFAULT_CATEGORY_MAP` (Rust)
+    // deliberately grew real Linux process names (`chrome`, `ptyxis`,
+    // etc. — categories.rs's own doc comment) that
+    // `agent/core/categories.py` never had and was never meant to, since
+    // Python was Windows-only and the Linux agent is Rust-only. Full
+    // byte-for-byte parity with Python remains the goal for every
+    // Windows entry Python already knows about; Rust knowing about MORE
+    // (Linux) processes on top of that is the intended, not accidental,
+    // difference this assertion must allow.
     let fixture = load_fixture("processes_for_category.json");
     let category = fixture["category"].as_str().unwrap();
     let overrides = json_overrides(&fixture["overrides"]);
@@ -80,7 +89,12 @@ fn processes_for_category_matches_python() {
     let actual: Vec<String> = processes_for_category(category, overrides.as_ref())
         .into_iter()
         .collect();
-    assert_eq!(actual, expected);
+    for process in &expected {
+        assert!(
+            actual.contains(process),
+            "Rust's result for category {category:?} is missing {process:?}, which Python's fixture expects"
+        );
+    }
 }
 
 #[test]
