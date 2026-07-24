@@ -212,6 +212,26 @@ fn run_collector_loop(
         return;
     }
 
+    // Реальный баг, найденный на живых машинах: на Ubuntu 24 (GNOME 46)
+    // вся активность молча уходила в категорию "Другое", а на другой
+    // машине (более новый GNOME) — нет, и до сих пор не было ни единой
+    // строчки в логе, почему. `unsupported_reason()`/
+    // `last_gnome_extension_error()` уже существовали в linux-collector,
+    // но их никогда никто не вызывал из реально запускаемого бинарника
+    // — это первое место, где это делается.
+    #[cfg(target_os = "linux")]
+    {
+        if let Some(reason) = collector.unsupported_reason() {
+            let detail = collector
+                .last_gnome_extension_error()
+                .map(|e| format!(" ({e})"))
+                .unwrap_or_default();
+            let _ = log.append(&format!(
+                "active-window detection unavailable at startup: {reason:?}{detail}"
+            ));
+        }
+    }
+
     let consent = Consent {
         active_app_category: true,
         input_activity_counts: true,
@@ -227,6 +247,8 @@ fn run_collector_loop(
         UNEXPLAINED_GAP_THRESHOLD_SECONDS,
     );
     let mut bucket_started_at = Utc::now();
+    #[cfg(target_os = "linux")]
+    let mut was_unsupported = collector.unsupported_reason().is_some();
 
     while !stop.load(Ordering::Relaxed) {
         std::thread::sleep(POLL_INTERVAL);
@@ -234,6 +256,33 @@ fn run_collector_loop(
 
         if !state.is_paused() {
             let snapshot = collector.poll();
+
+            // `poll()` silently retries the GNOME extension probe every
+            // tick while unsupported (see collector.rs) — log only the
+            // actual transition, not every tick, so a real recovery
+            // (extension finishes loading after login) or a real
+            // regression (extension crashes/gets disabled mid-session)
+            // is visible in agent.log without spamming it every 2s.
+            #[cfg(target_os = "linux")]
+            {
+                let is_unsupported = collector.unsupported_reason().is_some();
+                if is_unsupported != was_unsupported {
+                    if is_unsupported {
+                        let reason = collector.unsupported_reason();
+                        let detail = collector
+                            .last_gnome_extension_error()
+                            .map(|e| format!(" ({e})"))
+                            .unwrap_or_default();
+                        let _ = log.append(&format!(
+                            "active-window detection stopped working: {reason:?}{detail}"
+                        ));
+                    } else {
+                        let _ = log.append("active-window detection started working");
+                    }
+                    was_unsupported = is_unsupported;
+                }
+            }
+
             let tick = Tick {
                 active_process_name: snapshot.active_process_name,
                 keyboard_events: snapshot.keyboard_events,

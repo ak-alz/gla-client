@@ -40,6 +40,16 @@ pub struct LinuxSignalCollector {
     source: Option<ActiveWindowSource>,
     input_counters: Arc<InputCounters>,
     evdev_monitor: Option<EvdevInputMonitor>,
+    // Обычный `UnsupportedReason::GnomeRequiresShellExtension` (см. его
+    // докстринг) намеренно не различает "не установлено"/"не включено"/
+    // "ещё не подхватилось после логина"/что-то реально сломанное в самом
+    // расширении — но сам `zbus::Error` под капотом эту разницу знает.
+    // Раньше он терялся на `.ok()` в start()/poll() ниже — реальный баг
+    // (Ubuntu 24 весь день падает в "Другое") оказалось физически нечем
+    // диагностировать без единой строки в лог. Храним последний текст
+    // ошибки отдельно, чтобы вызывающая сторона (agent-bin) могла его
+    // реально куда-то записать.
+    last_gnome_error: Option<String>,
 }
 
 impl LinuxSignalCollector {
@@ -49,6 +59,7 @@ impl LinuxSignalCollector {
             source: None,
             input_counters: Arc::new(InputCounters::new()),
             evdev_monitor: None,
+            last_gnome_error: None,
         }
     }
 
@@ -62,6 +73,15 @@ impl LinuxSignalCollector {
             Some(ActiveWindowSource::Unsupported(reason)) => Some(reason),
             _ => None,
         }
+    }
+
+    /// The actual D-Bus error text from the most recent failed GNOME
+    /// Shell extension probe, if the reason above is
+    /// `GnomeRequiresShellExtension` — `None` for every other backend/
+    /// reason, and `None` once the extension starts responding
+    /// successfully (see `poll()`'s retry).
+    pub fn last_gnome_extension_error(&self) -> Option<&str> {
+        self.last_gnome_error.as_deref()
     }
 }
 
@@ -95,13 +115,19 @@ impl SignalCollector for LinuxSignalCollector {
             // reported before the extension existed, never a silent
             // guess that it's there.
             ActiveWindowBackend::Unsupported(UnsupportedReason::GnomeRequiresShellExtension) => {
-                GnomeExtensionSession::connect()
-                    .ok()
-                    .filter(|session| session.focused_window_pid().is_ok())
-                    .map(ActiveWindowSource::GnomeExtension)
-                    .unwrap_or(ActiveWindowSource::Unsupported(
-                        UnsupportedReason::GnomeRequiresShellExtension,
-                    ))
+                match GnomeExtensionSession::connect() {
+                    Ok(session) => match session.focused_window_pid() {
+                        Ok(_) => ActiveWindowSource::GnomeExtension(session),
+                        Err(err) => {
+                            self.last_gnome_error = Some(err.to_string());
+                            ActiveWindowSource::Unsupported(UnsupportedReason::GnomeRequiresShellExtension)
+                        }
+                    },
+                    Err(err) => {
+                        self.last_gnome_error = Some(err.to_string());
+                        ActiveWindowSource::Unsupported(UnsupportedReason::GnomeRequiresShellExtension)
+                    }
+                }
             }
             ActiveWindowBackend::Unsupported(reason) => ActiveWindowSource::Unsupported(reason),
         });
@@ -144,11 +170,15 @@ impl SignalCollector for LinuxSignalCollector {
                 UnsupportedReason::GnomeRequiresShellExtension
             ))
         ) {
-            if let Some(session) = GnomeExtensionSession::connect()
-                .ok()
-                .filter(|session| session.focused_window_pid().is_ok())
-            {
-                self.source = Some(ActiveWindowSource::GnomeExtension(session));
+            match GnomeExtensionSession::connect() {
+                Ok(session) => match session.focused_window_pid() {
+                    Ok(_) => {
+                        self.last_gnome_error = None;
+                        self.source = Some(ActiveWindowSource::GnomeExtension(session));
+                    }
+                    Err(err) => self.last_gnome_error = Some(err.to_string()),
+                },
+                Err(err) => self.last_gnome_error = Some(err.to_string()),
             }
         }
 
