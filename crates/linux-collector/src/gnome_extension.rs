@@ -28,6 +28,7 @@
 //! written blind earlier this project. Treat this as code-complete, not
 //! field-verified, until confirmed on a real machine.
 
+use std::process::Command;
 use thiserror::Error;
 use zbus::blocking::Connection;
 
@@ -35,6 +36,29 @@ const SERVICE: &str = "org.gnome.Shell";
 const OBJECT_PATH: &str = "/org/growthlayer/AgentHelper";
 const INTERFACE: &str = "org.growthlayer.AgentHelper";
 const METHOD: &str = "GetFocusedWindow";
+pub const EXTENSION_UUID: &str = "growth-layer-agent@growthlayer.app";
+
+/// Real bug found on a live Ubuntu 24.04 (GNOME 46) machine: the
+/// package's own postinst ALSO attempts `gnome-extensions enable` (see
+/// `installer/linux/deb/postinst`), but through a root process ->
+/// `runuser` dance into the installing user's session — and on that
+/// machine it silently left the extension `Enabled: No` / never even
+/// reaching `INITIALIZED`, no error anywhere. Calling the exact same
+/// command from inside the agent process itself is strictly more
+/// reliable: unlike postinst, this code is GUARANTEED to already be
+/// running in a real, valid user session (the tray/ui-shell needs that
+/// same D-Bus session to register its own icon, so if we got this far,
+/// the session is real). Idempotent and harmless either way — a no-op
+/// if already enabled, a fast no-op failure if the extension isn't
+/// installed at all (non-GNOME desktop, or a build without it packaged).
+/// The follow-up D-Bus probe is what actually decides whether this
+/// worked; this function's own exit status is never trusted alone.
+pub fn try_enable() {
+    let _ = Command::new("gnome-extensions")
+        .arg("enable")
+        .arg(EXTENSION_UUID)
+        .status();
+}
 
 #[derive(Debug, Error)]
 pub enum GnomeExtensionError {

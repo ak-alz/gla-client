@@ -6,7 +6,7 @@
 
 use crate::environment::{detect_active_window_backend, ActiveWindowBackend, UnsupportedReason};
 use crate::evdev_counter::EvdevInputMonitor;
-use crate::gnome_extension::GnomeExtensionSession;
+use crate::gnome_extension::{self, GnomeExtensionSession};
 use crate::hyprland;
 use crate::input_counters::InputCounters;
 use crate::process_name::process_name_for_pid;
@@ -115,6 +115,10 @@ impl SignalCollector for LinuxSignalCollector {
             // reported before the extension existed, never a silent
             // guess that it's there.
             ActiveWindowBackend::Unsupported(UnsupportedReason::GnomeRequiresShellExtension) => {
+                // Self-heal once at startup — see gnome_extension::try_enable's
+                // own doc comment for why this is more reliable than the
+                // package postinst's attempt at the exact same thing.
+                gnome_extension::try_enable();
                 match GnomeExtensionSession::connect() {
                     Ok(session) => match session.focused_window_pid() {
                         Ok(_) => ActiveWindowSource::GnomeExtension(session),
