@@ -69,7 +69,25 @@ if [ -n "$MISSING_LIBS" ]; then
     echo
     echo "warning: growth-layer-agent is installed but can't run yet — missing shared libraries:"
     echo "$MISSING_LIBS" | sed 's/^/  /'
-    echo "On Arch: pacman -S gtk3 glib2 gdk-pixbuf2 xdotool"
+    # This prebuilt binary was linked against libxdo.so.3 (whatever xdotool
+    # provided on the machine that built this release). Confirmed for real
+    # in a fresh Arch container: current Arch's xdotool package has moved
+    # to libxdo.so.4 (upstream soname bump), so `pacman -S xdotool` cannot
+    # satisfy this specific binary no matter what — there is no .so.3 left
+    # to install on Arch. The PKGBUILD path doesn't have this problem: it
+    # compiles from source on the user's own machine, so it links against
+    # whatever libxdo is actually installed there (verified: produces a
+    # binary that correctly requires libxdo.so.4 on current Arch).
+    if echo "$MISSING_LIBS" | grep -qx 'libxdo\.so\.3'; then
+        echo "libxdo.so.3 specifically: installing xdotool via pacman will NOT fix this — current Arch's"
+        echo "xdotool package only ships libxdo.so.4, and this prebuilt binary needs the old .so.3."
+        echo "Use the Arch-native install instead, which builds from source and links against whatever"
+        echo "libxdo is actually on your system:"
+        echo "  mkdir -p /tmp/growth-layer-agent-build && curl -fL -o /tmp/growth-layer-agent-build/PKGBUILD https://raw.githubusercontent.com/ak-alz/gla-client/main/installer/linux/arch/PKGBUILD && cd /tmp/growth-layer-agent-build && makepkg -si"
+        echo "On Arch, the rest of the missing libraries (if any) still install normally: pacman -S gtk3 glib2 gdk-pixbuf2"
+    else
+        echo "On Arch: pacman -S gtk3 glib2 gdk-pixbuf2 xdotool"
+    fi
     echo "On Debian/Ubuntu: apt install libgtk-3-0 libglib2.0-0 libgdk-pixbuf-2.0-0 libxdo3"
     echo "Install those, then re-run this script (or just re-run: $BIN_DIR/growth-layer-agent --register-autostart)."
     exit 0
