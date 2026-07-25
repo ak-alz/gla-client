@@ -195,3 +195,147 @@ fn consent_on_and_genuinely_zero_yields_some_zero_not_none() {
     let signals = acc.flush(None);
     assert_eq!(signals.idle_seconds, Some(0.0));
 }
+
+// --- "Сон/выключение не растягивает открытый сегмент" (реальный баг,
+// найденный на скриншоте пользователя: "Браузер" 00:38-09:21 одним
+// сплошным сегментом, хотя компьютер явно не работал бóльшую часть
+// этого времени — accumulate() просто не вызывался, пока агент спал,
+// и когда он проснулся, close_current_segment посчитал длительность
+// как "сейчас минус когда сегмент открылся", не заметив реальный
+// разрыв между последним и следующим тиком). ---
+
+#[test]
+fn a_long_real_gap_between_ticks_closes_the_open_segment_at_the_last_real_tick_not_now() {
+    let opened_at = base_time();
+    // Нормальный шаг опроса (2с) — не должен сам по себе выглядеть как
+    // разрыв; реальный разрыв ниже — единственный намеренно большой.
+    let last_seen = opened_at + chrono::Duration::seconds(2);
+    let woke_up = last_seen + chrono::Duration::hours(8) + chrono::Duration::minutes(43);
+
+    let mut acc = BucketAccumulator::new(full_consent(), BTreeMap::new(), 900.0);
+    // Открывает сегмент.
+    acc.accumulate(&Tick {
+        active_process_name: Some("chrome.exe".to_string()),
+        keyboard_events: 1,
+        mouse_move_events: 1,
+        mouse_click_events: 0,
+        is_idle: false,
+        category_override: None,
+        occurred_at: opened_at,
+        interval_seconds: 2.0,
+    });
+    // Последний реальный тик перед сном — та же категория, сегмент
+    // остаётся открытым (started_at не сдвигается).
+    acc.accumulate(&Tick {
+        active_process_name: Some("chrome.exe".to_string()),
+        keyboard_events: 1,
+        mouse_move_events: 1,
+        mouse_click_events: 0,
+        is_idle: false,
+        category_override: None,
+        occurred_at: last_seen,
+        interval_seconds: 2.0,
+    });
+    // Компьютер спал 8ч43м — следующий тик агент видит только сейчас,
+    // с тем же самым процессом на переднем плане (никакой смены
+    // категории, которая иначе закрыла бы сегмент сама).
+    acc.accumulate(&Tick {
+        active_process_name: Some("chrome.exe".to_string()),
+        keyboard_events: 1,
+        mouse_move_events: 1,
+        mouse_click_events: 0,
+        is_idle: false,
+        category_override: None,
+        occurred_at: woke_up,
+        interval_seconds: 2.0,
+    });
+    // Ещё один тик другой категории, чтобы закрыть сегмент, открытый
+    // на пробуждении, и реально увидеть его в flush() (open-сегмент,
+    // как и открытый gap, сам по себе не появляется в closed_segments
+    // до тех пор, пока его что-то не закроет — то же самое верно и без
+    // этого бага, независимая от него часть контракта).
+    acc.accumulate(&Tick {
+        active_process_name: Some("code.exe".to_string()),
+        keyboard_events: 1,
+        mouse_move_events: 0,
+        mouse_click_events: 0,
+        is_idle: false,
+        category_override: None,
+        occurred_at: woke_up + chrono::Duration::seconds(2),
+        interval_seconds: 2.0,
+    });
+
+    let signals = acc.flush(None);
+    let segments = signals.activity_segments.unwrap();
+
+    // Первый сегмент закрылся РОВНО на последнем реальном тике — не
+    // растянулся на все 8ч43м простоя.
+    let first = segments
+        .iter()
+        .find(|s| s.started_at == opened_at)
+        .expect("segment starting at opened_at must exist");
+    assert_eq!(
+        first.ended_at, last_seen,
+        "closed at the last real tick, not stretched to the wake-up time"
+    );
+    assert!(
+        (first.duration_seconds - 2.0).abs() < 0.01,
+        "duration must reflect only real observed time (~2s), not the 8h43m gap: got {}",
+        first.duration_seconds
+    );
+
+    // Второй сегмент начался заново с момента пробуждения — не продолжение первого.
+    let second = segments
+        .iter()
+        .find(|s| s.started_at == woke_up)
+        .expect("a fresh segment starting at wake-up must exist");
+    assert_eq!(second.category, "browser");
+
+    // Сам простой — необъяснённый провал (порог 900с уже пройден: 8ч43м).
+    let gaps = signals.unexplained_gaps.unwrap();
+    let sleep_gap = gaps
+        .iter()
+        .find(|g| g.started_at == last_seen && g.ended_at == woke_up)
+        .expect("the sleep interval itself must be recorded as an unexplained gap");
+    assert!((sleep_gap.duration_seconds - 31380.0).abs() < 1.0); // 8h43m in seconds
+}
+
+#[test]
+fn a_short_gap_between_ticks_does_not_split_the_segment() {
+    // Убеждаемся, что порог не слишком чувствительный — обычная
+    // задержка планировщика (несколько секунд, не 8 часов) не должна
+    // ложно резать нормальный, непрерывный сегмент на два.
+    let t0 = base_time();
+    let t1 = t0 + chrono::Duration::seconds(5); // нормальный джиттер, не разрыв
+
+    let mut acc = BucketAccumulator::new(full_consent(), BTreeMap::new(), 900.0);
+    acc.accumulate(&Tick {
+        active_process_name: Some("code.exe".to_string()),
+        keyboard_events: 1,
+        mouse_move_events: 0,
+        mouse_click_events: 0,
+        is_idle: false,
+        category_override: None,
+        occurred_at: t0,
+        interval_seconds: 2.0,
+    });
+    acc.accumulate(&Tick {
+        active_process_name: Some("code.exe".to_string()),
+        keyboard_events: 1,
+        mouse_move_events: 0,
+        mouse_click_events: 0,
+        is_idle: false,
+        category_override: None,
+        occurred_at: t1,
+        interval_seconds: 2.0,
+    });
+    // Ничего не закрылось — сегмент всё ещё открыт (та же категория,
+    // никакого форс-закрытия по разрыву).
+    let signals = acc.flush(None);
+    assert_eq!(
+        signals.activity_segments.unwrap().len(),
+        0,
+        "a normal few-second scheduling delay must not force-close the segment"
+    );
+    assert_eq!(signals.unexplained_gaps.unwrap().len(), 0);
+}

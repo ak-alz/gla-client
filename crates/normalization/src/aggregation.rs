@@ -40,6 +40,29 @@ pub struct Tick {
     pub interval_seconds: f64,
 }
 
+/// Реальный баг, найденный на скриншоте пользователя: компьютер ушёл в
+/// сон/выключился в 00:38, следующий реальный тик пришёл только в 09:21
+/// (8ч43м) — и вся эта дыра молча легла в длительность уже открытого
+/// на тот момент сегмента ("Браузер"), потому что ничто не отличало
+/// "тик пришёл вовремя" от "тик пришёл на 8 часов позже, чем должен
+/// был". `Tick::interval_seconds` для этого не годится — это
+/// КОНСТАНТА (всегда равна настроенному шагу опроса), она не измеряет
+/// реальный прошедший срок между тиками, только заявляет "сколько
+/// секунд считать", независимо от того, что случилось на самом деле.
+/// Единственный надёжный сигнал — сравнение `occurred_at` двух подряд
+/// идущих тиков. Если разрыв намного больше нормального шага опроса
+/// (обычная задержка планировщика — доли секунды, не десятки секунд) —
+/// это не дребезг, а реальный простой (сон, гибернация, зависший
+/// процесс агента, скачок системных часов), и всё открытое на тот
+/// момент нужно закрыть РОВНО на момент последнего реального тика, не
+/// "сейчас" — иначе ровно этот класс бага. Фиксированная внутренняя
+/// константа, не параметр конструктора: это эвристика устойчивости
+/// исполнения, а не продуктовая/consent-настройка вроде порога
+/// `unexplained_gaps` ниже — незачем менять сигнатуру во всех текущих
+/// вызовах `BucketAccumulator::new()` ради значения, которое в
+/// продукте никому не нужно настраивать.
+const MAX_TICK_GAP_SECONDS: f64 = 30.0;
+
 /// Placeholder key for `app_seconds` when the active window isn't idle but
 /// the collector couldn't determine a process name (system dialogs, UAC,
 /// secure desktop) — mirrors `aggregator.py::UNKNOWN_APP_LABEL` exactly,
@@ -74,6 +97,10 @@ pub struct BucketAccumulator {
     current_segment_category: Option<String>,
     current_segment_started_at: Option<DateTime<Utc>>,
     idle_started_at: Option<DateTime<Utc>>,
+    // Тоже переживает `flush()`, тем же принципом — нужен именно между
+    // вызовами `accumulate()`, не между вызовами `flush()` (см.
+    // MAX_TICK_GAP_SECONDS's докстринг).
+    last_tick_at: Option<DateTime<Utc>>,
 }
 
 impl BucketAccumulator {
@@ -99,6 +126,7 @@ impl BucketAccumulator {
             current_segment_category: None,
             current_segment_started_at: None,
             idle_started_at: None,
+            last_tick_at: None,
         }
     }
 
@@ -147,6 +175,30 @@ impl BucketAccumulator {
     /// for ticks whose category is `UNKNOWN_CATEGORY`).
     pub fn accumulate(&mut self, tick: &Tick) {
         let now = tick.occurred_at;
+
+        // См. MAX_TICK_GAP_SECONDS's докстринг — реальный разрыв между
+        // тиками (не декларативный interval_seconds) закрывает всё
+        // открытое на момент ПОСЛЕДНЕГО реального тика, не на "сейчас",
+        // и сам простой считается необъяснённым провалом на тех же
+        // условиях (consent + порог), что и обычный, наблюдаемый вживую
+        // idle-провал ниже — это та же по сути категория "время, за
+        // которое агент ничего не наблюдал", просто с другим источником
+        // сигнала (тишина между тиками, а не is_idle=true внутри тика).
+        if let Some(last) = self.last_tick_at {
+            let elapsed = (now - last).num_milliseconds() as f64 / 1000.0;
+            if elapsed > MAX_TICK_GAP_SECONDS {
+                self.close_current_segment(last);
+                self.close_current_gap(last); // no-op, если live idle не начинался — ОК
+                if self.consent.unexplained_gaps && elapsed >= self.unexplained_gap_threshold_seconds {
+                    self.closed_gaps.push(UnexplainedGap {
+                        started_at: last,
+                        ended_at: now,
+                        duration_seconds: elapsed,
+                    });
+                }
+            }
+        }
+        self.last_tick_at = Some(now);
 
         if tick.is_idle {
             self.idle_seconds += tick.interval_seconds;
