@@ -130,6 +130,19 @@ impl BucketAccumulator {
         }
     }
 
+    /// Replaces the override map after construction — the one caller
+    /// (agent-bin's collector loop) periodically re-fetches
+    /// GET /v1/agent/category-overrides and calls this so a manual
+    /// override made in the dashboard takes effect without restarting
+    /// the agent (found by a real user's Telegram Desktop report: the
+    /// old local-config-file-only override required exactly that).
+    /// Affects only ticks accumulated AFTER this call — never
+    /// retroactive, matching the honest "not instant" messaging shown
+    /// in the dashboard.
+    pub fn set_category_overrides(&mut self, category_overrides: BTreeMap<String, String>) {
+        self.category_overrides = category_overrides;
+    }
+
     fn segments_enabled(&self) -> bool {
         // Segments are categories over time — with no active_app_category
         // signal there is nothing for a segment to be a segment OF.

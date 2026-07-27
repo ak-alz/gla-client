@@ -23,9 +23,13 @@
 //! `ui-shell`'s tray.
 //!
 //! Deliberately NOT a full re-implementation of `agent/main.py`'s
-//! business logic (no `config.yaml`-equivalent consent/category-override
-//! schema, no git-commit scanning) — see config.rs's doc comment for
-//! exactly where the line is drawn. Device pairing (`pairing.rs`) WAS
+//! business logic (no git-commit scanning) — see config.rs's doc
+//! comment for exactly where the line is drawn. Category overrides ARE
+//! real here (`run_category_overrides_loop` below), but per-user and
+//! backend-synced, not `agent/main.py`'s local-file-only
+//! `config.yaml`'s `category_overrides` — a real user's Telegram
+//! Desktop report is what prompted building a real one instead of
+//! porting the old file-based mechanism. Device pairing (`pairing.rs`) WAS
 //! initially out of scope but is now real (AG-REL-003 follow-up): the
 //! tray's "Pair device" action calls the real backend pairing API
 //! itself, the same flow previously only exercisable by hand with curl.
@@ -65,6 +69,12 @@ const POLL_INTERVAL: Duration = Duration::from_secs(2);
 const EXPORT_INTERVAL_SECONDS: f64 = 60.0; // matches agent/config.yaml's override, not the 300s dataclass default
 const UNEXPLAINED_GAP_THRESHOLD_SECONDS: f64 = 900.0;
 const UPLOAD_INTERVAL: Duration = Duration::from_secs(30);
+// Not instant on purpose — the dashboard's own confirmation message says
+// so explicitly (TodayPage.tsx's category-override snackbar). A manual
+// override is a rare, deliberate action, not something that needs
+// sub-minute propagation; 5 minutes balances "notices fairly soon"
+// against "don't hammer the backend from every idle agent".
+const CATEGORY_OVERRIDES_POLL_INTERVAL: Duration = Duration::from_secs(5 * 60);
 
 /// Two independent reasons work can be paused, matching
 /// `lifecycle::power_events::LifecycleState`'s own "suspended vs locked
@@ -84,6 +94,13 @@ struct SharedState {
     /// cycle, without needing a restart — the loop reads this fresh each
     /// time instead of capturing one fixed value at spawn.
     agent_token: Mutex<SecretString>,
+    /// Written by `run_category_overrides_loop`, read by
+    /// `run_collector_loop` once per export cycle (see
+    /// `set_category_overrides`'s doc comment on why not more often).
+    /// Real per-user overrides from the dashboard — see this file's
+    /// module doc comment for how this differs from `agent/main.py`'s
+    /// old local-file-only mechanism.
+    category_overrides: Mutex<BTreeMap<String, String>>,
 }
 
 impl SharedState {
@@ -113,7 +130,9 @@ impl AgentController for Controller {
     }
 
     fn dashboard_url(&self) -> String {
-        self.state.dashboard_url.clone()
+        // Was the bare root — a real user's report caught "Открыть дашборд"
+        // landing on the marketing homepage instead of the actual dashboard.
+        format!("{}/today", self.state.dashboard_url.trim_end_matches('/'))
     }
 
     fn diagnostics_url(&self) -> String {
@@ -302,6 +321,12 @@ fn run_collector_loop(
 
         let bucket_age = (now - bucket_started_at).num_milliseconds() as f64 / 1000.0;
         if bucket_age >= EXPORT_INTERVAL_SECONDS {
+            // Picked up once per export cycle, not every 2s tick — cheap
+            // either way (a handful of strings at most), but this cadence
+            // is the natural checkpoint and matches the dashboard's own
+            // "applies at the next sync, not instantly" message. Only
+            // affects ticks accumulated AFTER this point, never retroactive.
+            accumulator.set_category_overrides(state.category_overrides.lock().unwrap().clone());
             let signals = accumulator.flush(None); // git_commits_count: out of scope, see config.rs
             match Envelope::build_or_quarantine(NewEnvelope {
                 device_id,
@@ -397,6 +422,60 @@ fn run_uploader_loop(
     }
 }
 
+/// Periodically pulls GET /v1/agent/category-overrides and writes the
+/// result into `state.category_overrides` — the first-ever agent←backend
+/// config channel this agent has (see this file's module doc comment).
+/// Prompted by a real user's report: "Telegram Desktop" isn't in the
+/// built-in category map and there was no way to fix that without
+/// hand-editing a local config file and restarting the agent.
+///
+/// Every successful fetch is cached to disk
+/// (`paths::category_overrides_cache_path()`) so a restart while
+/// offline still has the last known overrides instead of silently
+/// reverting to none — same "don't lose state just because the network
+/// is briefly down" spirit as `durable-queue`. The cache is read once,
+/// at startup, before the first fetch completes; a failed fetch after
+/// that just keeps whatever is already in `state.category_overrides`.
+fn run_category_overrides_loop(state: Arc<SharedState>, backend_url: String, stop: Arc<AtomicBool>) {
+    if let Some(cached) = load_cached_category_overrides() {
+        *state.category_overrides.lock().unwrap() = cached;
+    }
+
+    while !stop.load(Ordering::Relaxed) {
+        let agent_token = state.agent_token.lock().unwrap().clone();
+        let url = format!("{}/v1/agent/category-overrides", backend_url.trim_end_matches('/'));
+        let fetched = ureq::AgentBuilder::new()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .get(&url)
+            .set("X-Agent-Token", agent_token.expose())
+            .call()
+            .ok()
+            .and_then(|resp| resp.into_string().ok())
+            .and_then(|text| serde_json::from_str::<BTreeMap<String, String>>(&text).ok());
+
+        if let Some(overrides) = fetched {
+            let _ = std::fs::write(
+                paths::category_overrides_cache_path(),
+                serde_json::to_vec(&overrides).unwrap_or_default(),
+            );
+            *state.category_overrides.lock().unwrap() = overrides;
+        }
+        // Network/auth failures are silently retried next cycle -- same
+        // "not worth a dedicated error path" reasoning as
+        // run_uploader_loop's Unauthorized arm; a stale but present
+        // override beats none, and a bad agent_token is already
+        // surfaced elsewhere (the tray's connection status).
+
+        sleep_in_slices(CATEGORY_OVERRIDES_POLL_INTERVAL, &stop);
+    }
+}
+
+fn load_cached_category_overrides() -> Option<BTreeMap<String, String>> {
+    let bytes = std::fs::read(paths::category_overrides_cache_path()).ok()?;
+    serde_json::from_slice(&bytes).ok()
+}
+
 fn run_power_loop(state: Arc<SharedState>, stop: Arc<AtomicBool>) {
     let Ok((mut native_loop, rx)) = NativeLoop::start() else {
         return;
@@ -490,6 +569,7 @@ fn main() {
         dashboard_url: cfg.dashboard_url.clone(),
         backend_url: cfg.backend_url.clone(),
         agent_token: Mutex::new(cfg.agent_token.clone()),
+        category_overrides: Mutex::new(BTreeMap::new()),
     });
 
     let stop = Arc::new(AtomicBool::new(false));
@@ -507,6 +587,12 @@ fn main() {
         let stop = Arc::clone(&stop);
         let backend_url = cfg.backend_url.clone();
         std::thread::spawn(move || run_uploader_loop(state, queue, backend_url, stop))
+    };
+    let category_overrides_thread = {
+        let state = Arc::clone(&state);
+        let stop = Arc::clone(&stop);
+        let backend_url = cfg.backend_url.clone();
+        std::thread::spawn(move || run_category_overrides_loop(state, backend_url, stop))
     };
     let power_thread = {
         let state = Arc::clone(&state);
@@ -544,6 +630,7 @@ fn main() {
     let _ = collector_thread.join();
     let _ = uploader_thread.join();
     let _ = power_thread.join();
+    let _ = category_overrides_thread.join();
 
     let _ = log.append("agent quit cleanly");
     let _ = crash_marker.mark_clean_exit();

@@ -66,6 +66,13 @@ pub fn crash_marker_path() -> PathBuf {
     data_dir().join("crash_marker.json")
 }
 
+/// Last-successfully-fetched GET /v1/agent/category-overrides response
+/// — survives a restart while offline, same "don't lose state just
+/// because the network is briefly down" spirit as `queue_dir()`.
+pub fn category_overrides_cache_path() -> PathBuf {
+    data_dir().join("category_overrides_cache.json")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -78,5 +85,6 @@ mod tests {
         assert!(log_dir().starts_with(&root));
         assert!(single_instance_lock_path().starts_with(&root));
         assert!(crash_marker_path().starts_with(&root));
+        assert!(category_overrides_cache_path().starts_with(&root));
     }
 }

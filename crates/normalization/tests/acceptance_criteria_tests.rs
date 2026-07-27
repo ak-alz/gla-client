@@ -420,3 +420,51 @@ fn a_long_same_category_dwell_is_split_across_multiple_flushes_not_one_retroacti
     );
     assert_eq!(segments_2[0].ended_at, t_flush_2);
 }
+
+// --- "Manual category override applies to future ticks, never retroactively" ---
+// Real user report: an unrecognized process name (e.g. a Telegram Desktop
+// variant) falls into "other" under the built-in map; the dashboard's
+// manual override (see agent-bin's run_category_overrides_loop) must
+// change how it's categorized going forward without altering anything
+// already accumulated before the override was applied.
+
+#[test]
+fn set_category_overrides_affects_only_ticks_accumulated_afterward() {
+    let t0 = base_time();
+    let mut acc = BucketAccumulator::new(full_consent(), BTreeMap::new(), 900.0);
+
+    let tick = |acc: &mut BucketAccumulator, at: DateTime<Utc>| {
+        acc.accumulate(&Tick {
+            active_process_name: Some("unrecognized-app.exe".to_string()),
+            keyboard_events: 1,
+            mouse_move_events: 0,
+            mouse_click_events: 0,
+            is_idle: false,
+            category_override: None,
+            occurred_at: at,
+            interval_seconds: 2.0,
+        });
+    };
+
+    // Before any override: falls into "other", per the built-in map.
+    tick(&mut acc, t0);
+    let mut overrides = BTreeMap::new();
+    overrides.insert("unrecognized-app.exe".to_string(), "communication".to_string());
+    acc.set_category_overrides(overrides);
+
+    // After the override: the same process name now resolves differently.
+    tick(&mut acc, t0 + chrono::Duration::seconds(2));
+
+    let signals = acc.flush(None);
+    let category_seconds = signals.active_app_category_seconds.unwrap();
+    assert_eq!(
+        category_seconds.get("other").copied().unwrap_or(0.0),
+        2.0,
+        "the tick accumulated BEFORE the override must keep its original category"
+    );
+    assert_eq!(
+        category_seconds.get("communication").copied().unwrap_or(0.0),
+        2.0,
+        "the tick accumulated AFTER the override must use the new category"
+    );
+}
