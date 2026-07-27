@@ -85,16 +85,54 @@ impl Default for Config {
     }
 }
 
+/// Production domains this binary has pointed to in the past, since
+/// retired — astrakey.ru was the original (and briefly sole) production
+/// domain before devpace.ru was acquired and promoted to primary
+/// (2026-07-21). Any `config.json` written before that switch has these
+/// values baked in from a real pairing session (see `persist_agent_token`
+/// doc comment — an update never touches `backend_url`/`dashboard_url`
+/// once written), so bumping the compiled default alone does nothing for
+/// an already-installed, already-paired agent: it just keeps reading its
+/// own stale file forever. Found on a real running install, not
+/// hypothetical — see CHANGELOG.
+const RETIRED_BACKEND_URLS: &[&str] = &["https://api.astrakey.ru"];
+const RETIRED_DASHBOARD_URLS: &[&str] = &["https://astrakey.ru"];
+
 /// Reads `config.json` from the data directory; missing file or
 /// unparsable content both fall back to [`Config::default`] rather than
 /// failing startup — a corrupt/missing local config must never stop the
 /// agent from at least collecting and queuing locally.
+///
+/// Also self-heals a retired domain left over from before a production
+/// domain switch (see [`RETIRED_BACKEND_URLS`]/[`RETIRED_DASHBOARD_URLS`])
+/// by rewriting it to the current compiled default and persisting the
+/// fix back to disk immediately — a user should never need to reinstall
+/// or hand-edit `config.json` just because the product's own domain
+/// moved.
 pub fn load() -> Config {
     let path = paths::data_dir().join("config.json");
-    match std::fs::read_to_string(&path) {
+    let mut config: Config = match std::fs::read_to_string(&path) {
         Ok(text) => serde_json::from_str(&text).unwrap_or_default(),
-        Err(_) => Config::default(),
+        Err(_) => return Config::default(),
+    };
+
+    let mut migrated = false;
+    if RETIRED_BACKEND_URLS.contains(&config.backend_url.as_str()) {
+        config.backend_url = default_backend_url();
+        migrated = true;
     }
+    if RETIRED_DASHBOARD_URLS.contains(&config.dashboard_url.as_str()) {
+        config.dashboard_url = default_dashboard_url();
+        migrated = true;
+    }
+    if migrated {
+        let tmp_path = path.with_extension("json.tmp");
+        if let Ok(json) = serde_json::to_string_pretty(&config) {
+            let _ = std::fs::write(&tmp_path, json).and_then(|_| std::fs::rename(&tmp_path, &path));
+        }
+    }
+
+    config
 }
 
 /// Writes a newly-obtained `agent_token` back into `config.json`,
@@ -120,6 +158,17 @@ pub fn persist_agent_token(agent_token: &SecretString) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    // Rust runs tests in this file concurrently by default, but every test
+    // that points `paths::data_dir()` at a scratch dir does so by mutating
+    // the SAME process-wide env var (LOCALAPPDATA/XDG_DATA_HOME) — without
+    // serializing those tests, one can clobber another's env var mid-run
+    // (real failure seen: a `left == right` mismatch AND a Windows
+    // "Отказано в доступе" from two tests racing on directory setup at
+    // once). Any test that touches that env var must hold this lock for
+    // its whole body.
+    static ENV_VAR_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn default_config_is_unpaired_with_local_dev_urls() {
@@ -138,6 +187,7 @@ mod tests {
 
     #[test]
     fn persist_agent_token_round_trips_and_preserves_other_fields() {
+        let _guard = ENV_VAR_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         // A real temp data dir, never the real user's -- overrides the
         // same env var `paths::data_dir()` reads, restored immediately
         // after so no other test in this binary sees it changed.
@@ -191,5 +241,49 @@ mod tests {
             serde_json::from_str(r#"{"agent_token": "super-secret-abc123"}"#).unwrap();
         let formatted = format!("{config:?}");
         assert!(!formatted.contains("super-secret-abc123"));
+    }
+
+    #[test]
+    fn load_migrates_a_retired_domain_and_persists_the_fix_preserving_the_token() {
+        let _guard = ENV_VAR_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let scratch = std::env::temp_dir().join(format!(
+            "gla-config-migrate-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&scratch).unwrap();
+        #[cfg(windows)]
+        let env_var = "LOCALAPPDATA";
+        #[cfg(not(windows))]
+        let env_var = "XDG_DATA_HOME";
+        let previous = std::env::var_os(env_var);
+        std::env::set_var(env_var, &scratch);
+
+        std::fs::create_dir_all(paths::data_dir()).unwrap();
+        let config_path = paths::data_dir().join("config.json");
+        std::fs::write(
+            &config_path,
+            r#"{"backend_url":"https://api.astrakey.ru","agent_token":"real-token","dashboard_url":"https://astrakey.ru"}"#,
+        )
+        .unwrap();
+
+        let migrated = load();
+        let on_disk_after = std::fs::read_to_string(&config_path).unwrap();
+
+        match previous {
+            Some(value) => std::env::set_var(env_var, value),
+            None => std::env::remove_var(env_var),
+        }
+        std::fs::remove_dir_all(&scratch).ok();
+
+        assert_eq!(migrated.backend_url, default_backend_url());
+        assert_eq!(migrated.dashboard_url, default_dashboard_url());
+        assert_eq!(migrated.agent_token.expose(), "real-token");
+        // The fix must actually be written back, not just applied in memory --
+        // otherwise every single launch re-does the same one-time migration.
+        assert!(!on_disk_after.contains("astrakey"));
     }
 }
