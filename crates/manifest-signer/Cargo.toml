@@ -1,0 +1,18 @@
+[package]
+name = "manifest-signer"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Release-tooling only, never shipped in the agent: builds and signs an update manifest from an already-built, already-uploaded release artifact. Run locally by a human after `gh release create`, never in CI (the private signing key never leaves this machine)."
+
+[[bin]]
+name = "manifest-signer"
+path = "src/main.rs"
+
+[dependencies]
+update-manifest = { path = "../update-manifest" }
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+sha2 = "0.10"
+semver = { version = "1", features = ["serde"] }
+serde_json = "1"

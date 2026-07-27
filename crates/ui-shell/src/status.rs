@@ -17,6 +17,12 @@ pub struct AgentStatus {
     pub last_sync: Option<DateTime<Utc>>,
     pub pending_count: usize,
     pub agent_version: String,
+    /// `Some(version)` when a real, verified, in-rollout update has been
+    /// found (see `agent-bin`'s `update_check` module) — a plain string,
+    /// not a `semver::Version`, so this crate (presentation-only, no
+    /// knowledge of the agent's internals) never needs to depend on
+    /// `semver` just to display a version number.
+    pub available_update_version: Option<String>,
 }
 
 /// Mirrors the running/paused distinction as a short, unambiguous label —
@@ -91,6 +97,7 @@ mod tests {
             last_sync,
             pending_count,
             agent_version: "0.1.0-rust".to_string(),
+            available_update_version: None,
         }
     }
 

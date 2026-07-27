@@ -52,6 +52,14 @@ pub trait AgentController: Send + Sync + 'static {
     /// actual network calls/polling, never blocking this call site,
     /// which runs on the tray's own event-loop thread.
     fn pair_device(&self);
+    /// Click handler for "Проверить обновления"/"Доступно обновление
+    /// X.Y.Z". Must return promptly, same constraint as `pair_device` —
+    /// implementations spawn their own thread for the actual network
+    /// check; if a verified update is already known, this instead opens
+    /// its release notes in the browser (see `agent-bin`'s `Controller`
+    /// impl) rather than making the user wait on a network call they
+    /// don't need right now.
+    fn check_for_updates(&self);
 }
 
 /// How often the menu's time-sensitive text (mainly "last sync: N minutes
@@ -261,9 +269,7 @@ impl App {
                 false
             }
             MenuAction::CheckForUpdates => {
-                // Disabled in the menu until AG-UPD-001+ exist — a click
-                // should be unreachable, but if one somehow arrives, doing
-                // nothing is the safe default, not a crash or a fake success.
+                self.controller.check_for_updates();
                 false
             }
             MenuAction::PairDevice => {

@@ -38,6 +38,7 @@ impl AgentController for DemoController {
             last_sync: *self.last_sync.lock().unwrap(),
             pending_count: self.pending_count.load(Ordering::Relaxed),
             agent_version: "0.1.0-rust-ag007-demo".to_string(),
+            available_update_version: None,
         }
     }
 
@@ -63,6 +64,10 @@ impl AgentController for DemoController {
 
     fn pair_device(&self) {
         println!("pair_device: demo controller is always 'paired', nothing to do");
+    }
+
+    fn check_for_updates(&self) {
+        println!("check_for_updates: demo controller has no real updater wired");
     }
 }
 

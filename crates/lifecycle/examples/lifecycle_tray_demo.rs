@@ -25,6 +25,7 @@ impl AgentController for DemoController {
             last_sync: Some(chrono::Utc::now()),
             pending_count: 0,
             agent_version: "0.1.0-rust-ag008-demo".to_string(),
+            available_update_version: None,
         }
     }
     fn toggle_active(&self) {}
@@ -38,6 +39,7 @@ impl AgentController for DemoController {
         "https://github.com/ak-alz/gla-client".to_string()
     }
     fn pair_device(&self) {}
+    fn check_for_updates(&self) {}
 }
 
 fn main() {

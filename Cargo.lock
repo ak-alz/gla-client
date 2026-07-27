@@ -42,6 +42,7 @@ dependencies = [
  "chrono",
  "collector-core",
  "durable-queue",
+ "ed25519-dalek",
  "embed-resource",
  "event-contract",
  "gethostname",
@@ -50,11 +51,13 @@ dependencies = [
  "macos-collector",
  "normalization",
  "secrets",
+ "semver",
  "serde",
  "serde_json",
  "signal-hook",
  "thiserror 1.0.69",
  "ui-shell",
+ "update-manifest",
  "uploader",
  "ureq",
  "windows-collector",
@@ -1734,6 +1737,17 @@ dependencies = [
  "objc2-app-kit 0.3.2",
  "objc2-core-foundation",
  "objc2-core-graphics",
+]
+
+[[package]]
+name = "manifest-signer"
+version = "0.1.0"
+dependencies = [
+ "ed25519-dalek",
+ "semver",
+ "serde_json",
+ "sha2",
+ "update-manifest",
 ]
 
 [[package]]

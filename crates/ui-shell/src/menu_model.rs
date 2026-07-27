@@ -62,14 +62,6 @@ impl MenuEntry {
             enabled: true,
         }
     }
-
-    fn disabled_action(label: impl Into<String>, action: MenuAction) -> Self {
-        MenuEntry {
-            label: label.into(),
-            action: Some(action),
-            enabled: false,
-        }
-    }
 }
 
 /// Builds the full, ordered menu content for the given status. `now` is
@@ -102,11 +94,16 @@ pub fn build_menu(status: &AgentStatus, now: DateTime<Utc>) -> Vec<MenuEntry> {
         "Открыть дашборд",
         MenuAction::OpenDashboard,
     ));
-    // Not yet implemented server-side (AG-UPD-001+ are still TODO) — present
-    // in the menu per the required item list, but disabled rather than
-    // wired to a fake/no-op action a user could mistake for a real check.
-    entries.push(MenuEntry::disabled_action(
-        "Проверить обновления (скоро)",
+    // Real now (previously disabled here until AG-UPD-001+ were wired —
+    // see `agent-bin`'s `update_check` module for the fix). No known
+    // update: clicking runs an immediate check. A known, verified update:
+    // clicking opens its release notes — the agent never replaces its
+    // own binary silently, the person decides whether to install it.
+    entries.push(MenuEntry::action(
+        match &status.available_update_version {
+            Some(version) => format!("Доступно обновление {version}"),
+            None => "Проверить обновления".to_string(),
+        },
         MenuAction::CheckForUpdates,
     ));
     entries.push(MenuEntry::info(version_line(status)));
@@ -130,6 +127,7 @@ mod tests {
             last_sync: None,
             pending_count: 0,
             agent_version: "0.1.0-rust".to_string(),
+            available_update_version: None,
         }
     }
 
@@ -243,15 +241,26 @@ mod tests {
     }
 
     #[test]
-    fn check_for_updates_is_present_but_disabled_until_the_updater_exists() {
+    fn check_for_updates_is_enabled_and_reflects_no_known_update() {
         let menu = build_menu(&status(true, false), Utc::now());
         let entry = menu
             .iter()
             .find(|e| e.action == Some(MenuAction::CheckForUpdates))
             .unwrap();
-        assert!(
-            !entry.enabled,
-            "must not look actionable until AG-UPD-001+ actually implement it"
-        );
+        assert!(entry.enabled, "must be actionable now that the updater is wired");
+        assert_eq!(entry.label, "Проверить обновления");
+    }
+
+    #[test]
+    fn check_for_updates_shows_the_version_once_one_is_known() {
+        let mut s = status(true, false);
+        s.available_update_version = Some("1.2.3".to_string());
+        let menu = build_menu(&s, Utc::now());
+        let entry = menu
+            .iter()
+            .find(|e| e.action == Some(MenuAction::CheckForUpdates))
+            .unwrap();
+        assert!(entry.enabled);
+        assert_eq!(entry.label, "Доступно обновление 1.2.3");
     }
 }

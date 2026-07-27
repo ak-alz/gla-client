@@ -40,6 +40,7 @@ mod config;
 mod pairing;
 mod paths;
 mod platform;
+mod update_check;
 
 use chrono::Utc;
 use collector_core::SignalCollector;
@@ -75,6 +76,12 @@ const UPLOAD_INTERVAL: Duration = Duration::from_secs(30);
 // sub-minute propagation; 5 minutes balances "notices fairly soon"
 // against "don't hammer the backend from every idle agent".
 const CATEGORY_OVERRIDES_POLL_INTERVAL: Duration = Duration::from_secs(5 * 60);
+// New versions don't ship often enough to justify a 5-minute cadence
+// (that's `category_overrides`' rhythm, matched to a person actively
+// fixing a miscategorized app right now) -- reaching everyone within a
+// day of a real release is plenty, at a small fraction of the request
+// volume.
+const UPDATE_CHECK_POLL_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
 
 /// Two independent reasons work can be paused, matching
 /// `lifecycle::power_events::LifecycleState`'s own "suspended vs locked
@@ -101,6 +108,12 @@ struct SharedState {
     /// module doc comment for how this differs from `agent/main.py`'s
     /// old local-file-only mechanism.
     category_overrides: Mutex<BTreeMap<String, String>>,
+    /// Written by `run_update_check_loop`, read by the tray to decide
+    /// what "Проверить обновления" shows/does — `None` means either "no
+    /// update found yet" or "haven't checked yet," the tray doesn't need
+    /// to tell those apart (both render the same "Проверить обновления"
+    /// prompt).
+    available_update: Mutex<Option<update_check::AvailableUpdate>>,
 }
 
 impl SharedState {
@@ -112,6 +125,7 @@ impl SharedState {
 struct Controller {
     state: Arc<SharedState>,
     log: Arc<RotatingLog>,
+    device_id: String,
 }
 
 impl AgentController for Controller {
@@ -122,6 +136,13 @@ impl AgentController for Controller {
             last_sync: *self.state.last_sync.lock().unwrap(),
             pending_count: self.state.pending_count.load(Ordering::Relaxed),
             agent_version: AGENT_VERSION.to_string(),
+            available_update_version: self
+                .state
+                .available_update
+                .lock()
+                .unwrap()
+                .as_ref()
+                .map(|u| u.version.to_string()),
         }
     }
 
@@ -150,6 +171,28 @@ impl AgentController for Controller {
         let state = Arc::clone(&self.state);
         let log = Arc::clone(&self.log);
         std::thread::spawn(move || run_pairing_flow(state, log));
+    }
+
+    /// A known update already found by the background loop: no need to
+    /// make the person wait on a network call they don't need right
+    /// now -- open the release notes straight away. Nothing known yet:
+    /// this IS the explicit, deliberate user action a background poll
+    /// isn't, so a real (spawned, non-blocking-the-tray) check runs
+    /// immediately rather than waiting up to `UPDATE_CHECK_POLL_INTERVAL`.
+    fn check_for_updates(&self) {
+        if let Some(update) = self.state.available_update.lock().unwrap().clone() {
+            let _ = ui_shell::open_url(&update.release_notes_url);
+            return;
+        }
+        let state = Arc::clone(&self.state);
+        let device_id = self.device_id.clone();
+        std::thread::spawn(move || {
+            let installed_version =
+                semver::Version::parse(env!("CARGO_PKG_VERSION")).expect("CARGO_PKG_VERSION is always valid semver");
+            if let Some(found) = update_check::check_once_live(&installed_version, &device_id) {
+                *state.available_update.lock().unwrap() = Some(found);
+            }
+        });
     }
 }
 
@@ -476,6 +519,30 @@ fn load_cached_category_overrides() -> Option<BTreeMap<String, String>> {
     serde_json::from_slice(&bytes).ok()
 }
 
+/// Real periodic check for `update_check.rs` — see that module's doc
+/// comment for the full story on why this loop didn't exist until now
+/// despite the crates it wires up already being built and tested.
+/// `installed_version` is deliberately `CARGO_PKG_VERSION` alone, never
+/// `AGENT_VERSION` (see `update_check.rs`'s doc comment on why the
+/// "-rust-prototype" display suffix must never enter a semver compare).
+fn run_update_check_loop(state: Arc<SharedState>, device_id: String, stop: Arc<AtomicBool>) {
+    let installed_version =
+        semver::Version::parse(env!("CARGO_PKG_VERSION")).expect("CARGO_PKG_VERSION is always valid semver");
+
+    while !stop.load(Ordering::Relaxed) {
+        let found = update_check::check_once_live(&installed_version, &device_id);
+        if found.is_some() {
+            *state.available_update.lock().unwrap() = found;
+        }
+        // A failed/absent check leaves whatever was already known in
+        // place -- same "stale-but-present beats none" reasoning as
+        // run_category_overrides_loop, and a real update never
+        // disappears from the manifest once published, so there's no
+        // "un-find" case to handle here.
+        sleep_in_slices(UPDATE_CHECK_POLL_INTERVAL, &stop);
+    }
+}
+
 fn run_power_loop(state: Arc<SharedState>, stop: Arc<AtomicBool>) {
     let Ok((mut native_loop, rx)) = NativeLoop::start() else {
         return;
@@ -570,10 +637,12 @@ fn main() {
         backend_url: cfg.backend_url.clone(),
         agent_token: Mutex::new(cfg.agent_token.clone()),
         category_overrides: Mutex::new(BTreeMap::new()),
+        available_update: Mutex::new(None),
     });
 
     let stop = Arc::new(AtomicBool::new(false));
 
+    let device_id_string = device_id.to_string();
     let collector_thread = {
         let state = Arc::clone(&state);
         let queue = Arc::clone(&queue);
@@ -599,6 +668,12 @@ fn main() {
         let stop = Arc::clone(&stop);
         std::thread::spawn(move || run_power_loop(state, stop))
     };
+    let update_check_thread = {
+        let state = Arc::clone(&state);
+        let stop = Arc::clone(&stop);
+        let device_id_string = device_id_string.clone();
+        std::thread::spawn(move || run_update_check_loop(state, device_id_string, stop))
+    };
 
     // `systemctl --user stop`/`restart` sends SIGTERM by default (its
     // `KillSignal`) — without reacting to it, that ordinary service stop
@@ -623,6 +698,7 @@ fn main() {
     let controller = Arc::new(Controller {
         state: Arc::clone(&state),
         log: Arc::clone(&log),
+        device_id: device_id_string.clone(),
     });
     let _ = run_tray(controller);
 
@@ -631,6 +707,7 @@ fn main() {
     let _ = uploader_thread.join();
     let _ = power_thread.join();
     let _ = category_overrides_thread.join();
+    let _ = update_check_thread.join();
 
     let _ = log.append("agent quit cleanly");
     let _ = crash_marker.mark_clean_exit();
