@@ -329,13 +329,94 @@ fn a_short_gap_between_ticks_does_not_split_the_segment() {
         occurred_at: t1,
         interval_seconds: 2.0,
     });
-    // Ничего не закрылось — сегмент всё ещё открыт (та же категория,
-    // никакого форс-закрытия по разрыву).
+    // По самой категории сегмент не рвётся (та же "ide" всё время,
+    // никакого форс-закрытия по короткому джиттеру между тиками) — но
+    // flush() теперь ВСЕГДА раскрывает то, что накопилось в открытом
+    // сегменте на момент своего вызова (см. flush()'а докстринг: баг с
+    // пользовательского скриншота, где "Лента дня" была пустой весь
+    // долгий одноприложенческий отрезок и получала один огромный
+    // сегмент только на переключении). Поэтому здесь ровно один сегмент
+    // длиной в реальный прошедший интервал (t0..t1, 5с), не 0 — но
+    // именно ОДИН, не два: короткий джиттер между тиками сам по себе
+    // сегмент не режет, это по-прежнему проверяется через gaps ниже.
     let signals = acc.flush(None);
+    let segments = signals.activity_segments.unwrap();
     assert_eq!(
-        signals.activity_segments.unwrap().len(),
-        0,
-        "a normal few-second scheduling delay must not force-close the segment"
+        segments.len(),
+        1,
+        "flush() splits the still-open segment at its own boundary, but a short scheduling delay must not ALSO force-close it via the gap heuristic (that would show up as unexplained_gaps below, or a second segment)"
     );
+    assert_eq!(segments[0].category, "ide");
+    assert_eq!(segments[0].started_at, t0);
+    assert_eq!(segments[0].ended_at, t1);
     assert_eq!(signals.unexplained_gaps.unwrap().len(), 0);
+}
+
+// --- "Долгое пребывание в одной категории видно по частям, не одним
+//     ретроактивным куском" (реальный баг, data_bugs/05: "Лента дня"
+//     показывала пустоту, пока человек не переключался, а потом сразу
+//     весь накопленный отрезок одним сегментом) ---
+
+#[test]
+fn a_long_same_category_dwell_is_split_across_multiple_flushes_not_one_retroactive_block() {
+    // Реалистичная плотность тиков (POLL_INTERVAL в main.rs — 2с), гэп
+    // между соседними тиками всегда меньше MAX_TICK_GAP_SECONDS (30с),
+    // чтобы не задеть сон/простой-эвристику — тестируем именно
+    // flush()'а границу (EXPORT_INTERVAL_SECONDS в main.rs — 60с), не
+    // разрыв между тиками.
+    let t0 = base_time();
+    let mut acc = BucketAccumulator::new(full_consent(), BTreeMap::new(), 900.0);
+    let mut now = t0;
+
+    let tick_same_category = |acc: &mut BucketAccumulator, at: DateTime<Utc>| {
+        acc.accumulate(&Tick {
+            active_process_name: Some("code.exe".to_string()),
+            keyboard_events: 1,
+            mouse_move_events: 0,
+            mouse_click_events: 0,
+            is_idle: false,
+            category_override: None,
+            occurred_at: at,
+            interval_seconds: 2.0,
+        });
+    };
+
+    // Открываем сегмент и держим его 60 секунд одними и теми же тиками
+    // (30 штук по 2с) — ни одного переключения категории.
+    tick_same_category(&mut acc, now);
+    for _ in 0..29 {
+        now += chrono::Duration::seconds(2);
+        tick_same_category(&mut acc, now);
+    }
+    let t_flush_1 = now; // t0 + 58s
+
+    let signals_1 = acc.flush(None);
+    let segments_1 = signals_1.activity_segments.unwrap();
+    assert_eq!(
+        segments_1.len(),
+        1,
+        "flush() must surface its own slice of the still-open segment, not stay empty until a category change ever happens"
+    );
+    assert_eq!(segments_1[0].started_at, t0);
+    assert_eq!(segments_1[0].ended_at, t_flush_1);
+
+    // Ещё 60 секунд той же самой категории, затем второй flush().
+    for _ in 0..30 {
+        now += chrono::Duration::seconds(2);
+        tick_same_category(&mut acc, now);
+    }
+    let t_flush_2 = now;
+
+    let signals_2 = acc.flush(None);
+    let segments_2 = signals_2.activity_segments.unwrap();
+    assert_eq!(
+        segments_2.len(),
+        1,
+        "the second flush must ALSO surface its own slice — not stay empty until a category change ever happens"
+    );
+    assert_eq!(
+        segments_2[0].started_at, t_flush_1,
+        "picks up exactly where the previous flush's slice left off, no gap and no overlap"
+    );
+    assert_eq!(segments_2[0].ended_at, t_flush_2);
 }

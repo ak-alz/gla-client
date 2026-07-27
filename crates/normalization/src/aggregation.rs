@@ -266,6 +266,41 @@ impl BucketAccumulator {
     /// Resets bucket sums only — NOT the open segment/gap state, matching
     /// `_reset_bucket()`'s documented behavior in the Python source exactly.
     pub fn flush(&mut self, git_commits_count: Option<i64>) -> Signals {
+        // Реальный баг с пользовательского скриншота: пока категория не
+        // меняется, current_segment_* переживает flush() бесконечно (см.
+        // комментарий у этих полей выше) — то есть открытый сегмент ни
+        // разу не попадает в closed_segments, пока человек его не
+        // сменит, и "Лента дня" выглядит пустой всё это время, а затем
+        // получает один длинный сегмент задним числом в момент
+        // переключения. Раскрываем его на границе flush() тем же
+        // приёмом, что и MAX_TICK_GAP_SECONDS'а ветка в accumulate()
+        // использует для сна/простоя: закрываем на last_tick_at
+        // (последний реально наблюдённый тик, а не момент вызова
+        // flush() — тот может прийти позже, если сам процесс агента
+        // был приостановлен), сразу открываем новый сегмент той же
+        // категории с этой же границы. Категория-триггер закрытия при
+        // реальном переключении (accumulate() выше) продолжает работать
+        // как раньше — эта правка только гарантирует, что сегмент
+        // никогда не остаётся невидимым дольше одного bucket'а экспорта.
+        if self.segments_enabled() {
+            if let (Some(category), Some(started_at), Some(boundary)) = (
+                self.current_segment_category.clone(),
+                self.current_segment_started_at,
+                self.last_tick_at,
+            ) {
+                let duration = (boundary - started_at).num_milliseconds() as f64 / 1000.0;
+                if duration > 0.0 {
+                    self.closed_segments.push(ActivitySegment {
+                        category,
+                        started_at,
+                        ended_at: boundary,
+                        duration_seconds: duration,
+                    });
+                    self.current_segment_started_at = Some(boundary);
+                }
+            }
+        }
+
         let signals = Signals {
             active_app_category_seconds: self
                 .consent
