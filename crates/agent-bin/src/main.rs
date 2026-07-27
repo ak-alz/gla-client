@@ -55,7 +55,11 @@ use std::time::Duration;
 use ui_shell::{run_tray, AgentController, AgentStatus};
 use uploader::{BackoffConfig, BackoffState, Uploader, UploaderConfig, UreqTransport};
 
-const AGENT_VERSION: &str = "0.1.16-rust-prototype";
+// Was a hand-typed literal that drifted from Cargo.toml's actual version
+// (shipped v0.1.17 still displaying "0.1.16" in the tray, caught via a real
+// user's screenshot after reinstalling) — derived from CARGO_PKG_VERSION at
+// compile time now, so a version bump can never leave this one stale again.
+const AGENT_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "-rust-prototype");
 const AUTOSTART_APP_NAME: &str = "GrowthLayerAgent";
 const POLL_INTERVAL: Duration = Duration::from_secs(2);
 const EXPORT_INTERVAL_SECONDS: f64 = 60.0; // matches agent/config.yaml's override, not the 300s dataclass default
