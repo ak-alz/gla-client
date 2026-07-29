@@ -96,7 +96,7 @@ fn legacy_wire_preserves_every_python_mvp_field_name_and_type() {
         );
     }
 
-    assert_eq!(obj["schema_version"], "0.6.0-prototype");
+    assert_eq!(obj["schema_version"], "0.6.1-prototype");
 
     let signals = obj["signals"].as_object().unwrap();
     for field in [
