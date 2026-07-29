@@ -18,7 +18,7 @@ use update_manifest::{sign, Architecture, Channel, Platform, UnsignedManifest};
 fn usage() -> ! {
     eprintln!(
         "usage: manifest-signer --version 0.1.21 --platform windows|linux|macos \\\n  \
-         --artifact-url https://... --artifact-path ./GrowthLayerAgentSetup-0.1.21.exe \\\n  \
+         --artifact-url https://... --artifact-path ./DevPaceSetup-0.1.21.exe \\\n  \
          --release-notes-url https://... [--rollout 100] [--mandatory] \\\n  \
          [--key ~/.gla-manifest-signing-key] [--out manifest-windows-x86_64.json] \\\n  \
          [--min-backend 0.1.0] [--min-schema 0.1.0] [--rollback-target 0.1.19]"

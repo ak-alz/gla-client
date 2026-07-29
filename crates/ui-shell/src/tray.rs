@@ -339,7 +339,7 @@ fn build_app(
     // its own cfg-gate here).
     let tray = TrayIconBuilder::new()
         .with_menu(Box::new(built.menu))
-        .with_tooltip("Growth Layer")
+        .with_tooltip("DevPace")
         .with_icon(icon)
         .with_icon_as_template(true)
         .build()?;

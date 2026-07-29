@@ -52,7 +52,7 @@ impl SecretStore for LinuxSecretStore {
             collection.unlock()?;
         }
         collection.create_item(
-            "Growth Layer Agent device token",
+            "DevPace device token",
             self.attributes(),
             token.expose().as_bytes(),
             true, // replace any existing item with the same attributes

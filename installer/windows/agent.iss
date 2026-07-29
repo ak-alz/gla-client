@@ -42,9 +42,18 @@
 ;   and what remains a genuine, external, environment gap (a real,
 ;   CA-issued Authenticode certificate).
 
-#define MyAppName "Growth Layer Agent"
-#define MyAppVersion "0.1.23"
-#define MyAppPublisher "Growth Layer"
+; "DevPace" — user-facing display name only (installer UI, Start Menu
+; shortcut, uninstall entry, tray tooltip). AppId below is UNCHANGED and
+; MUST stay that way (see its own comment) — that's what makes Inno
+; recognize this as an upgrade of the same product, not a parallel
+; install. The actual data directory (device_id.json/queue/logs — see
+; this file's top comment) and the exe/process name are ALSO deliberately
+; unchanged: renaming either risks losing an existing user's device
+; pairing or breaking the auto-updater, for a purely cosmetic gain — this
+; rename only touches what a user actually sees.
+#define MyAppName "DevPace"
+#define MyAppVersion "0.1.24"
+#define MyAppPublisher "DevPace"
 #define MyAppExeName "growth-layer-agent.exe"
 
 [Setup]
@@ -52,7 +61,7 @@ AppId={{53BFB598-6B57-49BC-8E70-1BE8AB8ADE5E}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-DefaultDirName={localappdata}\Programs\GrowthLayerAgent
+DefaultDirName={localappdata}\Programs\DevPace
 DisableProgramGroupPage=yes
 DisableDirPage=yes
 DisableReadyPage=yes
@@ -63,13 +72,14 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=..\..\dist\windows
 ; Version-LESS filename, deliberately — the download page/docs link at
-; the stable `releases/latest/download/GrowthLayerAgentSetup.exe` URL
-; (same convention the Linux .deb/.rpm/tarball assets already use), which
-; only resolves if the uploaded asset is actually named that. A versioned
-; name here (the previous convention) silently 404s that link on every
-; release unless someone remembers to also upload a renamed copy by hand
-; — found for real when a user hit exactly that 404 on v0.1.23.
-OutputBaseFilename=GrowthLayerAgentSetup
+; the stable `releases/latest/download/DevPaceSetup.exe` URL (same
+; convention the Linux .deb/.rpm/tarball assets already use), which only
+; resolves if the uploaded asset is actually named that. A versioned name
+; here (the previous convention) silently 404s that link on every release
+; unless someone remembers to also upload a renamed copy by hand — found
+; for real when a user hit exactly that 404 on v0.1.23 (back when this
+; was still named GrowthLayerAgentSetup).
+OutputBaseFilename=DevPaceSetup
 Compression=lzma
 SolidCompression=yes
 UninstallDisplayIcon={app}\{#MyAppExeName}
@@ -107,7 +117,7 @@ Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Parameters: "--register-autostart"; Flags: runhidden waituntilterminated; StatusMsg: "Настройка автозапуска..."
-Filename: "{app}\{#MyAppExeName}"; Description: "Запустить Growth Layer Agent"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#MyAppExeName}"; Description: "Запустить DevPace"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
 Filename: "{app}\{#MyAppExeName}"; Parameters: "--unregister-autostart"; Flags: runhidden waituntilterminated; RunOnceId: "UnregisterAutostart"
