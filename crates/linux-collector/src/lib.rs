@@ -35,6 +35,8 @@
 //! succeeding on this project's Windows development host.
 
 #[cfg(target_os = "linux")]
+mod browser_url;
+#[cfg(target_os = "linux")]
 mod collector;
 #[cfg(target_os = "linux")]
 mod environment;

@@ -27,3 +27,15 @@ pub fn frontmost_process_name() -> Option<String> {
     let name = app.localizedName()?;
     Some(name.to_string())
 }
+
+/// Same frontmost-application lookup as above, returning its PID instead
+/// of its display name — needed by `browser_url.rs`'s
+/// `AXUIElementCreateApplication(pid)`, which addresses a process by PID,
+/// not by name. `NSRunningApplication::processIdentifier()` — confirmed
+/// to exist on the same cached `objc2-app-kit` 0.3.2 source as the rest
+/// of this file, same UNVERIFIED status as everything else here.
+pub fn frontmost_pid() -> Option<i32> {
+    let workspace = NSWorkspace::sharedWorkspace();
+    let app = workspace.frontmostApplication()?;
+    Some(app.processIdentifier())
+}

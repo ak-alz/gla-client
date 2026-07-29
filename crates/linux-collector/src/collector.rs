@@ -4,6 +4,7 @@
 //! role exactly: `start()` detects the environment and starts whichever
 //! backend applies, `poll()` returns one `RawSignalSnapshot`.
 
+use crate::browser_url::{classify_browser_url, should_classify_via_url, AddressBarReader};
 use crate::environment::{detect_active_window_backend, ActiveWindowBackend, UnsupportedReason};
 use crate::evdev_counter::EvdevInputMonitor;
 use crate::gnome_extension::{self, GnomeExtensionSession};
@@ -12,6 +13,8 @@ use crate::input_counters::InputCounters;
 use crate::process_name::process_name_for_pid;
 use crate::x11::{X11Error, X11Session};
 use collector_core::{RawSignalSnapshot, SignalCollector};
+use normalization::UrlRules;
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 use thiserror::Error;
@@ -40,6 +43,9 @@ pub struct LinuxSignalCollector {
     source: Option<ActiveWindowSource>,
     input_counters: Arc<InputCounters>,
     evdev_monitor: Option<EvdevInputMonitor>,
+    browser_process_names: HashSet<String>,
+    browser_url_rules: UrlRules,
+    address_bar_reader: AddressBarReader,
     // Обычный `UnsupportedReason::GnomeRequiresShellExtension` (см. его
     // докстринг) намеренно не различает "не установлено"/"не включено"/
     // "ещё не подхватилось после логина"/что-то реально сломанное в самом
@@ -60,7 +66,26 @@ impl LinuxSignalCollector {
             input_counters: Arc::new(InputCounters::new()),
             evdev_monitor: None,
             last_gnome_error: None,
+            // Same six-browser list as windows_collector::platform's
+            // browser_process_names() — Linux process names have no
+            // ".exe" suffix, so they're spelled slightly differently, but
+            // it's the same underlying six real browsers.
+            browser_process_names: [
+                "chrome", "google-chrome", "chromium", "firefox", "brave", "opera",
+            ]
+            .into_iter()
+            .map(|name| name.to_lowercase())
+            .collect(),
+            browser_url_rules: Vec::new(),
+            address_bar_reader: AddressBarReader::new(),
         }
+    }
+
+    /// Same idea as `windows_collector::WindowsSignalCollector::
+    /// set_browser_url_rules` — refreshes URL-classification rules on an
+    /// already-running collector.
+    pub fn set_browser_url_rules(&mut self, browser_url_rules: UrlRules) {
+        self.browser_url_rules = browser_url_rules;
     }
 
     /// The reason active-window detection is unavailable in the current
@@ -217,6 +242,22 @@ impl SignalCollector for LinuxSignalCollector {
 
         let is_idle = idle_seconds >= self.idle_threshold_seconds;
 
+        // Title classification is still genuinely out of scope on Linux
+        // (no window-title read exists here at all, unlike Windows — see
+        // `windows_collector::browser_title`'s doc comment on why that's
+        // the one place titles are ever examined there). URL rules are a
+        // separate signal this platform CAN support, via AT-SPI2 —
+        // see `browser_url.rs`'s doc comment for its real verification
+        // status (unverified against a live browser in this round).
+        let category_override = match &active_process_name {
+            Some(process_name)
+                if should_classify_via_url(process_name, &self.browser_process_names, &self.browser_url_rules) =>
+            {
+                classify_browser_url(&mut self.address_bar_reader, process_name, &self.browser_url_rules)
+            }
+            _ => None,
+        };
+
         RawSignalSnapshot {
             active_process_name,
             keyboard_events,
@@ -224,7 +265,7 @@ impl SignalCollector for LinuxSignalCollector {
             mouse_click_events,
             is_idle,
             idle_seconds,
-            category_override: None, // browser-title classification: not in this task's scope
+            category_override,
         }
     }
 }

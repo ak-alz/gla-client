@@ -9,6 +9,7 @@ description = "Linux implementation of the platform signal collector: X11 (EWMH 
 [dependencies]
 collector-core = { path = "../collector-core" }
 lifecycle = { path = "../lifecycle" }
+normalization = { path = "../normalization" }
 thiserror = "1"
 
 [target.'cfg(target_os = "linux")'.dependencies]

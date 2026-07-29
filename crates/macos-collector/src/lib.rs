@@ -38,6 +38,8 @@
 #[cfg(target_os = "macos")]
 mod active_app;
 #[cfg(target_os = "macos")]
+mod browser_url;
+#[cfg(target_os = "macos")]
 mod collector;
 #[cfg(target_os = "macos")]
 mod idle;

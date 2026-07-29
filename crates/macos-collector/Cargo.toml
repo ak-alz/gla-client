@@ -9,6 +9,7 @@ description = "AG-MAC-001 draft macOS collector — UNVERIFIED, never compiled o
 [dependencies]
 collector-core = { path = "../collector-core" }
 lifecycle = { path = "../lifecycle" }
+normalization = { path = "../normalization" }
 
 # objc2-* (not the older, less actively maintained cocoa/core-foundation-rs
 # crates — see AGENT_MACOS_CAPABILITY_MATRIX.md's research note) — versions

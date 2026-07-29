@@ -1,8 +1,11 @@
 //! UNVERIFIED — see crate-level doc comment.
 
+use crate::browser_url::{classify_browser_url, should_classify_via_url, AddressBarReader};
 use crate::input_counter::InputCounter;
 use crate::permissions::MissingPermission;
 use collector_core::{RawSignalSnapshot, SignalCollector};
+use normalization::UrlRules;
+use std::collections::HashSet;
 
 #[derive(Debug)]
 pub enum MacosCollectorError {
@@ -33,13 +36,31 @@ impl std::error::Error for MacosCollectorError {}
 /// the three input-count fields go to `0` when it isn't).
 pub struct MacosSignalCollector {
     input_counter: Option<InputCounter>,
+    browser_process_names: HashSet<String>,
+    browser_url_rules: UrlRules,
+    address_bar_reader: AddressBarReader,
 }
 
 impl MacosSignalCollector {
     pub fn new() -> Self {
         Self {
             input_counter: None,
+            browser_process_names: [
+                "safari", "chrome", "google chrome", "firefox", "brave browser", "microsoft edge",
+            ]
+            .into_iter()
+            .map(|name| name.to_lowercase())
+            .collect(),
+            browser_url_rules: Vec::new(),
+            address_bar_reader: AddressBarReader::new(),
         }
+    }
+
+    /// Same idea as `windows_collector::WindowsSignalCollector::
+    /// set_browser_url_rules` — refreshes URL-classification rules on an
+    /// already-running collector.
+    pub fn set_browser_url_rules(&mut self, browser_url_rules: UrlRules) {
+        self.browser_url_rules = browser_url_rules;
     }
 
     /// The one place this crate's caller learns WHY input counting isn't
@@ -90,15 +111,31 @@ impl SignalCollector for MacosSignalCollector {
             .unwrap_or((0, 0, 0));
 
         let idle_seconds = crate::idle::idle_seconds();
+        let active_process_name = crate::active_app::frontmost_process_name();
+
+        // Same "URL rules first, no title-based fallback here" shape as
+        // Linux (this platform never had title classification either) —
+        // see `browser_url.rs`'s doc comment for the real caveat: this
+        // whole path is UNVERIFIED, never compiled/linked on real macOS
+        // hardware.
+        let category_override = match &active_process_name {
+            Some(process_name)
+                if should_classify_via_url(process_name, &self.browser_process_names, &self.browser_url_rules) =>
+            {
+                crate::active_app::frontmost_pid()
+                    .and_then(|pid| classify_browser_url(&mut self.address_bar_reader, pid, &self.browser_url_rules))
+            }
+            _ => None,
+        };
 
         RawSignalSnapshot {
-            active_process_name: crate::active_app::frontmost_process_name(),
+            active_process_name,
             keyboard_events,
             mouse_move_events,
             mouse_click_events,
             is_idle: idle_seconds >= 120.0, // matches the 120s threshold windows-collector/linux-collector already use
             idle_seconds,
-            category_override: None,
+            category_override,
         }
     }
 }

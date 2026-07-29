@@ -16,6 +16,7 @@
 //! comment on `platforms/windows/collector.py`.
 
 mod browser_title;
+mod browser_url;
 mod collector;
 mod foreground;
 mod hooks;

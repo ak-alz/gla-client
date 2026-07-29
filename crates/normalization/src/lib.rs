@@ -17,10 +17,12 @@
 mod aggregation;
 mod categories;
 mod title_classifier;
+mod url_classifier;
 
 pub use aggregation::{BucketAccumulator, Tick, UNKNOWN_APP_LABEL};
 pub use categories::{categorize, category_label, processes_for_category, UNKNOWN_CATEGORY};
 pub use title_classifier::{classify_title, TitleRules};
+pub use url_classifier::{classify_url, extract_host, UrlRules};
 
 /// See the module-level doc comment's "Versioning" section.
 pub const ALGORITHM_VERSION: &str = "1.0.0";

@@ -50,7 +50,7 @@ use lifecycle::{
     acquire, register_for_crash_restart, Autostart, CrashMarker, LifecycleAction, LifecycleState,
     RotatingLog,
 };
-use normalization::{BucketAccumulator, Tick, TitleRules};
+use normalization::{BucketAccumulator, Tick, TitleRules, UrlRules};
 use platform::{new_collector, NativeLoop};
 use secrets::SecretString;
 use std::collections::BTreeMap;
@@ -80,6 +80,9 @@ const CATEGORY_OVERRIDES_POLL_INTERVAL: Duration = Duration::from_secs(5 * 60);
 // person adding a browser-tab keyword rule right now cares about it
 // taking effect soon, not instantly.
 const TITLE_RULES_POLL_INTERVAL: Duration = Duration::from_secs(5 * 60);
+// Same cadence/reasoning as TITLE_RULES_POLL_INTERVAL -- a person adding a
+// domain rule right now cares about it taking effect soon, not instantly.
+const URL_RULES_POLL_INTERVAL: Duration = Duration::from_secs(5 * 60);
 // New versions don't ship often enough to justify a 5-minute cadence
 // (that's `category_overrides`' rhythm, matched to a person actively
 // fixing a miscategorized app right now) -- reaching everyone within a
@@ -120,6 +123,13 @@ struct SharedState {
     /// the polling itself is cheap and harmless to run on every
     /// platform, only the collector-side application is gated.
     title_rules: Mutex<TitleRules>,
+    /// Same idea as `title_rules` above, for GET /v1/agent/url-rules -- a
+    /// user's own domain rules (e.g. "youtube" -> a custom "Отдых"
+    /// category), matched against the address bar instead of the title.
+    /// See `windows_collector::browser_url`'s doc comment for how the
+    /// address bar is actually read -- Windows-only for now, same
+    /// per-platform gating reasoning as `title_rules`.
+    url_rules: Mutex<UrlRules>,
     /// Written by `run_update_check_loop`, read by the tray to decide
     /// what "Проверить обновления" shows/does — `None` means either "no
     /// update found yet" or "haven't checked yet," the tray doesn't need
@@ -383,12 +393,20 @@ fn run_collector_loop(
             // affects ticks accumulated AFTER this point, never retroactive.
             accumulator.set_category_overrides(state.category_overrides.lock().unwrap().clone());
             // Windows-only, same as should_classify()'s whole premise
-            // (browser_title.rs) -- linux-collector/macos-collector
-            // don't examine window titles at all yet, so there's no
-            // setter to call there (see collector.rs's own doc comment
-            // on this being the ONLY place titles are ever inspected).
+            // (browser_title.rs) -- linux-collector/macos-collector don't
+            // examine window titles at all (no title reading exists on
+            // either), so there's no setter to call there.
             #[cfg(windows)]
             collector.set_browser_title_rules(state.title_rules.lock().unwrap().clone());
+            // URL rules, unlike title rules, ARE wired on all three
+            // platforms -- Windows (UIA, empirically verified against a
+            // live browser), Linux (AT-SPI2) and macOS (Accessibility
+            // API) both gained a real `browser_url` module in the same
+            // round that added this. See each crate's `browser_url.rs`
+            // doc comment for its own verification status -- only
+            // Windows' has actually been run against a real browser.
+            #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
+            collector.set_browser_url_rules(state.url_rules.lock().unwrap().clone());
             let signals = accumulator.flush(None); // git_commits_count: out of scope, see config.rs
             match Envelope::build_or_quarantine(NewEnvelope {
                 device_id,
@@ -579,6 +597,48 @@ fn load_cached_title_rules() -> Option<TitleRules> {
     serde_json::from_slice(&bytes).ok()
 }
 
+/// Same shape as `run_title_rules_loop` above, for GET /v1/agent/url-rules
+/// -- a user's own domain rules, matched against the address bar (see
+/// `windows_collector::browser_url`'s doc comment for how that's actually
+/// read). Same `[[category, [keyword, ...]]]` response shape as title
+/// rules -- `UrlRules` and `TitleRules` are structurally identical, just
+/// configured independently (see `normalization::url_classifier`'s doc
+/// comment on why they're still distinct types).
+fn run_url_rules_loop(state: Arc<SharedState>, backend_url: String, stop: Arc<AtomicBool>) {
+    if let Some(cached) = load_cached_url_rules() {
+        *state.url_rules.lock().unwrap() = cached;
+    }
+
+    while !stop.load(Ordering::Relaxed) {
+        let agent_token = state.agent_token.lock().unwrap().clone();
+        let url = format!("{}/v1/agent/url-rules", backend_url.trim_end_matches('/'));
+        let fetched = ureq::AgentBuilder::new()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .get(&url)
+            .set("X-Agent-Token", agent_token.expose())
+            .call()
+            .ok()
+            .and_then(|resp| resp.into_string().ok())
+            .and_then(|text| serde_json::from_str::<UrlRules>(&text).ok());
+
+        if let Some(rules) = fetched {
+            let _ = std::fs::write(paths::url_rules_cache_path(), serde_json::to_vec(&rules).unwrap_or_default());
+            *state.url_rules.lock().unwrap() = rules;
+        }
+        // Same "stale but present beats none" reasoning as
+        // run_title_rules_loop -- a transient network/auth failure keeps
+        // whatever rules were already known.
+
+        sleep_in_slices(URL_RULES_POLL_INTERVAL, &stop);
+    }
+}
+
+fn load_cached_url_rules() -> Option<UrlRules> {
+    let bytes = std::fs::read(paths::url_rules_cache_path()).ok()?;
+    serde_json::from_slice(&bytes).ok()
+}
+
 /// Real periodic check for `update_check.rs` — see that module's doc
 /// comment for the full story on why this loop didn't exist until now
 /// despite the crates it wires up already being built and tested.
@@ -698,6 +758,7 @@ fn main() {
         agent_token: Mutex::new(cfg.agent_token.clone()),
         category_overrides: Mutex::new(BTreeMap::new()),
         title_rules: Mutex::new(Vec::new()),
+        url_rules: Mutex::new(Vec::new()),
         available_update: Mutex::new(None),
     });
 
@@ -729,6 +790,12 @@ fn main() {
         let stop = Arc::clone(&stop);
         let backend_url = cfg.backend_url.clone();
         std::thread::spawn(move || run_title_rules_loop(state, backend_url, stop))
+    };
+    let url_rules_thread = {
+        let state = Arc::clone(&state);
+        let stop = Arc::clone(&stop);
+        let backend_url = cfg.backend_url.clone();
+        std::thread::spawn(move || run_url_rules_loop(state, backend_url, stop))
     };
     let power_thread = {
         let state = Arc::clone(&state);
@@ -775,6 +842,7 @@ fn main() {
     let _ = power_thread.join();
     let _ = category_overrides_thread.join();
     let _ = title_rules_thread.join();
+    let _ = url_rules_thread.join();
     let _ = update_check_thread.join();
 
     let _ = log.append("agent quit cleanly");

@@ -10,11 +10,12 @@
 //! override).
 
 use crate::browser_title::classify_browser_title;
+use crate::browser_url::{classify_browser_url, AddressBarReader};
 use crate::foreground::{foreground_hwnd, process_name_for_hwnd};
 use crate::hooks::{InputHooks, InputHooksError};
 use crate::idle::get_idle_seconds;
 use collector_core::{RawSignalSnapshot, SignalCollector};
-use normalization::TitleRules;
+use normalization::{TitleRules, UrlRules};
 use std::collections::HashSet;
 use thiserror::Error;
 
@@ -28,6 +29,8 @@ pub struct WindowsSignalCollector {
     idle_threshold_seconds: f64,
     browser_process_names: HashSet<String>,
     browser_title_rules: TitleRules,
+    browser_url_rules: UrlRules,
+    address_bar_reader: AddressBarReader,
     hooks: Option<InputHooks>,
 }
 
@@ -44,6 +47,8 @@ impl WindowsSignalCollector {
                 .map(|name| name.to_lowercase())
                 .collect(),
             browser_title_rules,
+            browser_url_rules: Vec::new(),
+            address_bar_reader: AddressBarReader::new(),
             hooks: None,
         }
     }
@@ -56,6 +61,13 @@ impl WindowsSignalCollector {
     /// `normalization::BucketAccumulator::set_category_overrides`.
     pub fn set_browser_title_rules(&mut self, browser_title_rules: TitleRules) {
         self.browser_title_rules = browser_title_rules;
+    }
+
+    /// Same idea as `set_browser_title_rules`, for `GET /v1/agent/url-rules`
+    /// (real, user-defined domain rules like "youtube" -> a custom "Отдых"
+    /// category, matched against the address bar instead of the title).
+    pub fn set_browser_url_rules(&mut self, browser_url_rules: UrlRules) {
+        self.browser_url_rules = browser_url_rules;
     }
 }
 
@@ -82,13 +94,36 @@ impl SignalCollector for WindowsSignalCollector {
 
         let hwnd = foreground_hwnd();
         let active_process_name = hwnd.and_then(process_name_for_hwnd);
+        // URL rules are tried FIRST when they're configured and match —
+        // an address-bar host is a more precise signal than a title
+        // keyword now that we actually have it (see `browser_url.rs`'s
+        // doc comment for how it's read). Title rules remain the
+        // fallback: they still fire on their own configured keywords when
+        // no URL rule matched (or URL reading failed this tick — e.g. a
+        // freshly-launched Firefox process whose accessibility engine
+        // hasn't warmed up yet), so nothing regresses for users who only
+        // ever set up title rules.
         let category_override = match (hwnd, &active_process_name) {
-            (Some(hwnd), Some(process_name)) => classify_browser_title(
-                hwnd,
-                process_name,
-                &self.browser_process_names,
-                &self.browser_title_rules,
-            ),
+            (Some(hwnd), Some(process_name)) => {
+                let should_read = crate::browser_url::should_classify_via_url(
+                    process_name,
+                    &self.browser_process_names,
+                    &self.browser_url_rules,
+                );
+                let from_url = if should_read {
+                    classify_browser_url(&mut self.address_bar_reader, hwnd, &self.browser_url_rules)
+                } else {
+                    None
+                };
+                from_url.or_else(|| {
+                    classify_browser_title(
+                        hwnd,
+                        process_name,
+                        &self.browser_process_names,
+                        &self.browser_title_rules,
+                    )
+                })
+            }
             _ => None,
         };
 

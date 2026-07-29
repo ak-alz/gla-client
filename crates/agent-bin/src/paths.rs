@@ -80,6 +80,13 @@ pub fn title_rules_cache_path() -> PathBuf {
     data_dir().join("title_rules_cache.json")
 }
 
+/// Same idea as `title_rules_cache_path`, for GET /v1/agent/url-rules — a
+/// user's own domain rules, matched against the address bar instead of
+/// the title.
+pub fn url_rules_cache_path() -> PathBuf {
+    data_dir().join("url_rules_cache.json")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -94,5 +101,6 @@ mod tests {
         assert!(crash_marker_path().starts_with(&root));
         assert!(category_overrides_cache_path().starts_with(&root));
         assert!(title_rules_cache_path().starts_with(&root));
+        assert!(url_rules_cache_path().starts_with(&root));
     }
 }

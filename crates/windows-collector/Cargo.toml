@@ -29,3 +29,16 @@ windows-sys = { version = "0.59", features = [
     # WNDCLASSEXW in Win32::UI::WindowsAndMessaging."
     "Win32_Graphics_Gdi",
 ] }
+# Only for browser_url.rs's UI Automation (COM) address-bar read — deliberately
+# a SEPARATE crate from windows-sys above rather than trying to make the flat
+# ABI-only windows-sys bindings do COM: windows-sys gives raw vtable structs
+# with no method-call ergonomics, which turns COM (interface casting, method
+# dispatch through vtables by hand) into a real correctness risk. The `windows`
+# crate provides real method syntax over the exact same underlying metadata,
+# generated the same way — used here, and ONLY here, for that reason.
+windows = { version = "0.58", features = [
+    "Win32_Foundation",
+    "Win32_System_Com",
+    "Win32_System_Variant",
+    "Win32_UI_Accessibility",
+] }
