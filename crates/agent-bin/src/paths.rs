@@ -73,6 +73,13 @@ pub fn category_overrides_cache_path() -> PathBuf {
     data_dir().join("category_overrides_cache.json")
 }
 
+/// Same idea as `category_overrides_cache_path`, for GET
+/// /v1/agent/title-rules — a user's own browser-tab keyword rules
+/// (e.g. "youtube" -> a custom "Отдых" category).
+pub fn title_rules_cache_path() -> PathBuf {
+    data_dir().join("title_rules_cache.json")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -86,5 +93,6 @@ mod tests {
         assert!(single_instance_lock_path().starts_with(&root));
         assert!(crash_marker_path().starts_with(&root));
         assert!(category_overrides_cache_path().starts_with(&root));
+        assert!(title_rules_cache_path().starts_with(&root));
     }
 }

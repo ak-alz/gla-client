@@ -17,13 +17,29 @@
 #[cfg(windows)]
 pub use windows_collector::NativeLoop;
 
+// Same six process names as normalization::categories.rs's "Browsers"
+// entries -- title classification only makes sense for a process that's
+// actually a browser (should_classify()'s first gate), and this list
+// changes about as rarely as that one does, so it's a plain constant
+// here rather than something fetched from the backend.
+#[cfg(windows)]
+fn browser_process_names() -> std::collections::HashSet<String> {
+    [
+        "chrome.exe",
+        "msedge.exe",
+        "firefox.exe",
+        "brave.exe",
+        "opera.exe",
+        "yandex.exe",
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect()
+}
+
 #[cfg(windows)]
 pub fn new_collector() -> windows_collector::WindowsSignalCollector {
-    windows_collector::WindowsSignalCollector::new(
-        120.0,
-        std::collections::HashSet::new(),
-        Vec::new(),
-    )
+    windows_collector::WindowsSignalCollector::new(120.0, browser_process_names(), Vec::new())
 }
 
 #[cfg(target_os = "linux")]

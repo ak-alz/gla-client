@@ -50,7 +50,7 @@ use lifecycle::{
     acquire, register_for_crash_restart, Autostart, CrashMarker, LifecycleAction, LifecycleState,
     RotatingLog,
 };
-use normalization::{BucketAccumulator, Tick};
+use normalization::{BucketAccumulator, Tick, TitleRules};
 use platform::{new_collector, NativeLoop};
 use secrets::SecretString;
 use std::collections::BTreeMap;
@@ -76,6 +76,10 @@ const UPLOAD_INTERVAL: Duration = Duration::from_secs(30);
 // sub-minute propagation; 5 minutes balances "notices fairly soon"
 // against "don't hammer the backend from every idle agent".
 const CATEGORY_OVERRIDES_POLL_INTERVAL: Duration = Duration::from_secs(5 * 60);
+// Same cadence/reasoning as CATEGORY_OVERRIDES_POLL_INTERVAL -- a
+// person adding a browser-tab keyword rule right now cares about it
+// taking effect soon, not instantly.
+const TITLE_RULES_POLL_INTERVAL: Duration = Duration::from_secs(5 * 60);
 // New versions don't ship often enough to justify a 5-minute cadence
 // (that's `category_overrides`' rhythm, matched to a person actively
 // fixing a miscategorized app right now) -- reaching everyone within a
@@ -108,6 +112,14 @@ struct SharedState {
     /// module doc comment for how this differs from `agent/main.py`'s
     /// old local-file-only mechanism.
     category_overrides: Mutex<BTreeMap<String, String>>,
+    /// Written by `run_title_rules_loop`, read by `run_collector_loop`
+    /// once per export cycle (same rhythm as `category_overrides`
+    /// above) -- a user's own browser-tab keyword rules, e.g. "youtube"
+    /// -> a custom "Отдых" category. Windows-only for now (see
+    /// `run_collector_loop`'s `#[cfg(windows)]` consumption site) --
+    /// the polling itself is cheap and harmless to run on every
+    /// platform, only the collector-side application is gated.
+    title_rules: Mutex<TitleRules>,
     /// Written by `run_update_check_loop`, read by the tray to decide
     /// what "Проверить обновления" shows/does — `None` means either "no
     /// update found yet" or "haven't checked yet," the tray doesn't need
@@ -370,6 +382,13 @@ fn run_collector_loop(
             // "applies at the next sync, not instantly" message. Only
             // affects ticks accumulated AFTER this point, never retroactive.
             accumulator.set_category_overrides(state.category_overrides.lock().unwrap().clone());
+            // Windows-only, same as should_classify()'s whole premise
+            // (browser_title.rs) -- linux-collector/macos-collector
+            // don't examine window titles at all yet, so there's no
+            // setter to call there (see collector.rs's own doc comment
+            // on this being the ONLY place titles are ever inspected).
+            #[cfg(windows)]
+            collector.set_browser_title_rules(state.title_rules.lock().unwrap().clone());
             let signals = accumulator.flush(None); // git_commits_count: out of scope, see config.rs
             match Envelope::build_or_quarantine(NewEnvelope {
                 device_id,
@@ -519,6 +538,47 @@ fn load_cached_category_overrides() -> Option<BTreeMap<String, String>> {
     serde_json::from_slice(&bytes).ok()
 }
 
+/// Same shape as `run_category_overrides_loop` above, for GET
+/// /v1/agent/title-rules -- a user's own browser-tab keyword rules
+/// (real feedback: "if my active tab is YouTube, I want to know how
+/// much I watch it, and bucket that into my own 'Отдых' category").
+/// The response is already `[[category, [keyword, ...]]]` -- exactly
+/// `TitleRules`'s own shape, no client-side grouping needed.
+fn run_title_rules_loop(state: Arc<SharedState>, backend_url: String, stop: Arc<AtomicBool>) {
+    if let Some(cached) = load_cached_title_rules() {
+        *state.title_rules.lock().unwrap() = cached;
+    }
+
+    while !stop.load(Ordering::Relaxed) {
+        let agent_token = state.agent_token.lock().unwrap().clone();
+        let url = format!("{}/v1/agent/title-rules", backend_url.trim_end_matches('/'));
+        let fetched = ureq::AgentBuilder::new()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .get(&url)
+            .set("X-Agent-Token", agent_token.expose())
+            .call()
+            .ok()
+            .and_then(|resp| resp.into_string().ok())
+            .and_then(|text| serde_json::from_str::<TitleRules>(&text).ok());
+
+        if let Some(rules) = fetched {
+            let _ = std::fs::write(paths::title_rules_cache_path(), serde_json::to_vec(&rules).unwrap_or_default());
+            *state.title_rules.lock().unwrap() = rules;
+        }
+        // Same "stale but present beats none" reasoning as
+        // run_category_overrides_loop -- a transient network/auth
+        // failure keeps whatever rules were already known.
+
+        sleep_in_slices(TITLE_RULES_POLL_INTERVAL, &stop);
+    }
+}
+
+fn load_cached_title_rules() -> Option<TitleRules> {
+    let bytes = std::fs::read(paths::title_rules_cache_path()).ok()?;
+    serde_json::from_slice(&bytes).ok()
+}
+
 /// Real periodic check for `update_check.rs` — see that module's doc
 /// comment for the full story on why this loop didn't exist until now
 /// despite the crates it wires up already being built and tested.
@@ -637,6 +697,7 @@ fn main() {
         backend_url: cfg.backend_url.clone(),
         agent_token: Mutex::new(cfg.agent_token.clone()),
         category_overrides: Mutex::new(BTreeMap::new()),
+        title_rules: Mutex::new(Vec::new()),
         available_update: Mutex::new(None),
     });
 
@@ -662,6 +723,12 @@ fn main() {
         let stop = Arc::clone(&stop);
         let backend_url = cfg.backend_url.clone();
         std::thread::spawn(move || run_category_overrides_loop(state, backend_url, stop))
+    };
+    let title_rules_thread = {
+        let state = Arc::clone(&state);
+        let stop = Arc::clone(&stop);
+        let backend_url = cfg.backend_url.clone();
+        std::thread::spawn(move || run_title_rules_loop(state, backend_url, stop))
     };
     let power_thread = {
         let state = Arc::clone(&state);
@@ -707,6 +774,7 @@ fn main() {
     let _ = uploader_thread.join();
     let _ = power_thread.join();
     let _ = category_overrides_thread.join();
+    let _ = title_rules_thread.join();
     let _ = update_check_thread.join();
 
     let _ = log.append("agent quit cleanly");

@@ -47,6 +47,16 @@ impl WindowsSignalCollector {
             hooks: None,
         }
     }
+
+    /// Refreshes the title-classification rules on an already-running
+    /// collector — added so `agent-bin`'s periodic poll of `GET
+    /// /v1/agent/title-rules` (real, user-defined rules like "youtube"
+    /// -> a custom "Отдых" category) can take effect without tearing
+    /// down and rebuilding the collector, same reasoning as
+    /// `normalization::BucketAccumulator::set_category_overrides`.
+    pub fn set_browser_title_rules(&mut self, browser_title_rules: TitleRules) {
+        self.browser_title_rules = browser_title_rules;
+    }
 }
 
 impl SignalCollector for WindowsSignalCollector {
