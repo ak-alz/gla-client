@@ -33,6 +33,13 @@ pub struct RawSignalSnapshot {
     /// collector's `poll()` through to the `Tick` `agent-bin` builds from
     /// this snapshot).
     pub matched_rule_key: Option<String>,
+    /// Company Layer — result of classifying this tick against
+    /// company/department rules ONLY, completely independent of
+    /// `category_override` above — see
+    /// `normalization::Tick::company_category`'s doc comment (same
+    /// carry-through purpose as `matched_rule_key`: from a collector's
+    /// `poll()` to the `Tick` `agent-bin` builds from this snapshot).
+    pub company_category: Option<String>,
 }
 
 /// The platform-agnostic contract every native collector implements.

@@ -38,6 +38,7 @@ fn make_envelope() -> Envelope {
                 other_app_seconds: None,
                 category_app_seconds: None,
                 rule_match_seconds: None,
+                company_category_seconds: None,
             },
             consent: Consent {
                 active_app_category: false,

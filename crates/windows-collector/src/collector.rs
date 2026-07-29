@@ -30,6 +30,11 @@ pub struct WindowsSignalCollector {
     browser_process_names: HashSet<String>,
     browser_title_rules: TitleRules,
     browser_url_rules: UrlRules,
+    /// Company Layer — completely independent rule sets, never merged
+    /// with the personal ones above (see `Tick::company_category`'s
+    /// doc comment in `normalization::aggregation`).
+    company_browser_title_rules: TitleRules,
+    company_browser_url_rules: UrlRules,
     address_bar_reader: AddressBarReader,
     hooks: Option<InputHooks>,
 }
@@ -48,6 +53,8 @@ impl WindowsSignalCollector {
                 .collect(),
             browser_title_rules,
             browser_url_rules: Vec::new(),
+            company_browser_title_rules: Vec::new(),
+            company_browser_url_rules: Vec::new(),
             address_bar_reader: AddressBarReader::new(),
             hooks: None,
         }
@@ -68,6 +75,19 @@ impl WindowsSignalCollector {
     /// category, matched against the address bar instead of the title).
     pub fn set_browser_url_rules(&mut self, browser_url_rules: UrlRules) {
         self.browser_url_rules = browser_url_rules;
+    }
+
+    /// Company Layer — same refresh mechanism as `set_browser_title_rules`,
+    /// for `GET /v1/agent/company-title-rules`. Never merged with the
+    /// personal rule set above.
+    pub fn set_company_browser_title_rules(&mut self, rules: TitleRules) {
+        self.company_browser_title_rules = rules;
+    }
+
+    /// Company Layer counterpart of `set_browser_url_rules`, for
+    /// `GET /v1/agent/company-url-rules`.
+    pub fn set_company_browser_url_rules(&mut self, rules: UrlRules) {
+        self.company_browser_url_rules = rules;
     }
 }
 
@@ -135,6 +155,40 @@ impl SignalCollector for WindowsSignalCollector {
         let category_override = matched.as_ref().map(|(category, _)| category.clone());
         let matched_rule_key = matched.map(|(_, rule_key)| rule_key);
 
+        // Company Layer — a SECOND, fully independent classification
+        // pass over the same (hwnd, process_name), against
+        // company/department rules only. Never falls back to the
+        // personal `matched` result above, never feeds into it — see
+        // `normalization::Tick::company_category`'s doc comment for why
+        // (comparable company-wide aggregates need every employee
+        // bucketed by the exact same rule set, regardless of what
+        // personal rules any one of them has configured).
+        let company_category: Option<String> = match (hwnd, &active_process_name) {
+            (Some(hwnd), Some(process_name)) => {
+                let should_read_company_url = crate::browser_url::should_classify_via_url(
+                    process_name,
+                    &self.browser_process_names,
+                    &self.company_browser_url_rules,
+                );
+                let from_company_url = if should_read_company_url {
+                    classify_browser_url(&mut self.address_bar_reader, hwnd, &self.company_browser_url_rules)
+                        .map(|(category, _keyword)| category)
+                } else {
+                    None
+                };
+                from_company_url.or_else(|| {
+                    classify_browser_title(
+                        hwnd,
+                        process_name,
+                        &self.browser_process_names,
+                        &self.company_browser_title_rules,
+                    )
+                    .map(|(category, _keyword)| category)
+                })
+            }
+            _ => None,
+        };
+
         RawSignalSnapshot {
             active_process_name,
             keyboard_events,
@@ -144,6 +198,7 @@ impl SignalCollector for WindowsSignalCollector {
             idle_seconds,
             category_override,
             matched_rule_key,
+            company_category,
         }
     }
 }

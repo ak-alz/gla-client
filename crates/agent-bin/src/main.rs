@@ -130,6 +130,16 @@ struct SharedState {
     /// address bar is actually read -- Windows-only for now, same
     /// per-platform gating reasoning as `title_rules`.
     url_rules: Mutex<UrlRules>,
+    /// Company Layer — written by `run_company_title_rules_loop`, read by
+    /// `run_collector_loop` the same rhythm as `title_rules` above.
+    /// Empty when the user isn't in an active company. Feeds the
+    /// collector's SECOND, independent classification pass (see
+    /// `normalization::Tick::company_category`'s doc comment) — never
+    /// merged with `title_rules` above, never falls back to it.
+    company_title_rules: Mutex<TitleRules>,
+    /// Company Layer counterpart of `url_rules`, for GET
+    /// /v1/agent/company-url-rules.
+    company_url_rules: Mutex<UrlRules>,
     /// Written by `run_update_check_loop`, read by the tray to decide
     /// what "Проверить обновления" shows/does — `None` means either "no
     /// update found yet" or "haven't checked yet," the tray doesn't need
@@ -379,6 +389,7 @@ fn run_collector_loop(
                 is_idle: snapshot.is_idle,
                 category_override: snapshot.category_override,
                 matched_rule_key: snapshot.matched_rule_key,
+                company_category: snapshot.company_category,
                 occurred_at: now,
                 interval_seconds: POLL_INTERVAL.as_secs_f64(),
             };
@@ -408,6 +419,13 @@ fn run_collector_loop(
             // Windows' has actually been run against a real browser.
             #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
             collector.set_browser_url_rules(state.url_rules.lock().unwrap().clone());
+            // Company Layer -- same platform gating as the personal rules
+            // just above, completely independent rule sets (never merged
+            // with title_rules/url_rules).
+            #[cfg(windows)]
+            collector.set_company_browser_title_rules(state.company_title_rules.lock().unwrap().clone());
+            #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
+            collector.set_company_browser_url_rules(state.company_url_rules.lock().unwrap().clone());
             let signals = accumulator.flush(None); // git_commits_count: out of scope, see config.rs
             match Envelope::build_or_quarantine(NewEnvelope {
                 device_id,
@@ -640,6 +658,90 @@ fn load_cached_url_rules() -> Option<UrlRules> {
     serde_json::from_slice(&bytes).ok()
 }
 
+/// Company Layer — same shape as `run_title_rules_loop` above, for GET
+/// /v1/agent/company-title-rules. Returns an empty list (not an error)
+/// when the user isn't in an active company, or the company/department
+/// hasn't configured any rules — the collector's company-channel
+/// classification simply never matches in that case, same as if this
+/// loop never ran at all. Response is department rules FIRST, then
+/// company rules (see backend's `routes/company_agent_rules.py`) — the
+/// SAME `Vec<(String, Vec<String>)>` first-match-wins order as personal
+/// rules already relies on, just built from two merged groups instead
+/// of one.
+fn run_company_title_rules_loop(state: Arc<SharedState>, backend_url: String, stop: Arc<AtomicBool>) {
+    if let Some(cached) = load_cached_company_title_rules() {
+        *state.company_title_rules.lock().unwrap() = cached;
+    }
+
+    while !stop.load(Ordering::Relaxed) {
+        let agent_token = state.agent_token.lock().unwrap().clone();
+        let url = format!("{}/v1/agent/company-title-rules", backend_url.trim_end_matches('/'));
+        let fetched = ureq::AgentBuilder::new()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .get(&url)
+            .set("X-Agent-Token", agent_token.expose())
+            .call()
+            .ok()
+            .and_then(|resp| resp.into_string().ok())
+            .and_then(|text| serde_json::from_str::<TitleRules>(&text).ok());
+
+        if let Some(rules) = fetched {
+            let _ = std::fs::write(
+                paths::company_title_rules_cache_path(),
+                serde_json::to_vec(&rules).unwrap_or_default(),
+            );
+            *state.company_title_rules.lock().unwrap() = rules;
+        }
+
+        sleep_in_slices(TITLE_RULES_POLL_INTERVAL, &stop);
+    }
+}
+
+fn load_cached_company_title_rules() -> Option<TitleRules> {
+    let bytes = std::fs::read(paths::company_title_rules_cache_path()).ok()?;
+    serde_json::from_slice(&bytes).ok()
+}
+
+/// Company Layer counterpart of `run_url_rules_loop`, for GET
+/// /v1/agent/company-url-rules — see `run_company_title_rules_loop`'s
+/// doc comment for the shared reasoning (empty-when-no-company, same
+/// department-first merge order).
+fn run_company_url_rules_loop(state: Arc<SharedState>, backend_url: String, stop: Arc<AtomicBool>) {
+    if let Some(cached) = load_cached_company_url_rules() {
+        *state.company_url_rules.lock().unwrap() = cached;
+    }
+
+    while !stop.load(Ordering::Relaxed) {
+        let agent_token = state.agent_token.lock().unwrap().clone();
+        let url = format!("{}/v1/agent/company-url-rules", backend_url.trim_end_matches('/'));
+        let fetched = ureq::AgentBuilder::new()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .get(&url)
+            .set("X-Agent-Token", agent_token.expose())
+            .call()
+            .ok()
+            .and_then(|resp| resp.into_string().ok())
+            .and_then(|text| serde_json::from_str::<UrlRules>(&text).ok());
+
+        if let Some(rules) = fetched {
+            let _ = std::fs::write(
+                paths::company_url_rules_cache_path(),
+                serde_json::to_vec(&rules).unwrap_or_default(),
+            );
+            *state.company_url_rules.lock().unwrap() = rules;
+        }
+
+        sleep_in_slices(URL_RULES_POLL_INTERVAL, &stop);
+    }
+}
+
+fn load_cached_company_url_rules() -> Option<UrlRules> {
+    let bytes = std::fs::read(paths::company_url_rules_cache_path()).ok()?;
+    serde_json::from_slice(&bytes).ok()
+}
+
 /// Real periodic check for `update_check.rs` — see that module's doc
 /// comment for the full story on why this loop didn't exist until now
 /// despite the crates it wires up already being built and tested.
@@ -760,6 +862,8 @@ fn main() {
         category_overrides: Mutex::new(BTreeMap::new()),
         title_rules: Mutex::new(Vec::new()),
         url_rules: Mutex::new(Vec::new()),
+        company_title_rules: Mutex::new(Vec::new()),
+        company_url_rules: Mutex::new(Vec::new()),
         available_update: Mutex::new(None),
     });
 
@@ -797,6 +901,18 @@ fn main() {
         let stop = Arc::clone(&stop);
         let backend_url = cfg.backend_url.clone();
         std::thread::spawn(move || run_url_rules_loop(state, backend_url, stop))
+    };
+    let company_title_rules_thread = {
+        let state = Arc::clone(&state);
+        let stop = Arc::clone(&stop);
+        let backend_url = cfg.backend_url.clone();
+        std::thread::spawn(move || run_company_title_rules_loop(state, backend_url, stop))
+    };
+    let company_url_rules_thread = {
+        let state = Arc::clone(&state);
+        let stop = Arc::clone(&stop);
+        let backend_url = cfg.backend_url.clone();
+        std::thread::spawn(move || run_company_url_rules_loop(state, backend_url, stop))
     };
     let power_thread = {
         let state = Arc::clone(&state);
@@ -843,6 +959,8 @@ fn main() {
     let _ = power_thread.join();
     let _ = category_overrides_thread.join();
     let _ = title_rules_thread.join();
+    let _ = company_title_rules_thread.join();
+    let _ = company_url_rules_thread.join();
     let _ = url_rules_thread.join();
     let _ = update_check_thread.join();
 

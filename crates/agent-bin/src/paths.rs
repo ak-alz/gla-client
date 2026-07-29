@@ -87,6 +87,21 @@ pub fn url_rules_cache_path() -> PathBuf {
     data_dir().join("url_rules_cache.json")
 }
 
+/// Company Layer — GET /v1/agent/company-title-rules (company/department
+/// rules, merged, department-first — see backend's
+/// `routes/company_agent_rules.py`). Empty when the user isn't in an
+/// active company; cached the same way as `title_rules_cache_path` so a
+/// restart while offline doesn't lose the last-known rule set.
+pub fn company_title_rules_cache_path() -> PathBuf {
+    data_dir().join("company_title_rules_cache.json")
+}
+
+/// Same idea as `company_title_rules_cache_path`, for GET
+/// /v1/agent/company-url-rules.
+pub fn company_url_rules_cache_path() -> PathBuf {
+    data_dir().join("company_url_rules_cache.json")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -102,5 +117,7 @@ mod tests {
         assert!(category_overrides_cache_path().starts_with(&root));
         assert!(title_rules_cache_path().starts_with(&root));
         assert!(url_rules_cache_path().starts_with(&root));
+        assert!(company_title_rules_cache_path().starts_with(&root));
+        assert!(company_url_rules_cache_path().starts_with(&root));
     }
 }

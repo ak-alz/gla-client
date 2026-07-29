@@ -42,6 +42,19 @@ pub struct Tick {
     /// resulted" (`category_seconds`), which a plain per-process override
     /// can't distinguish on its own.
     pub matched_rule_key: Option<String>,
+    /// Company Layer — result of classifying THIS tick against
+    /// company/department rules ONLY (see `agent-bin`'s collector loop
+    /// for how these are fetched via `GET /v1/agent/company-title-rules`/
+    /// `company-url-rules`), completely independent of
+    /// `category_override` above. `None` when no company rule matched
+    /// (including trivially when the user isn't in an active company at
+    /// all, or the company has configured zero rules) — `accumulate()`
+    /// falls this through to an explicit "other" bucket for the company
+    /// channel specifically, never to `category_override`'s personal
+    /// resolution and never to the default `categorize()` heuristic
+    /// (see the Company Layer plan's §3.2: two independent
+    /// categorization channels, not one shared priority order).
+    pub company_category: Option<String>,
     /// The instant this tick was observed — used only for segment/gap
     /// timing math, mirroring the Python source's `datetime.now(timezone.utc)`
     /// calls (injected here rather than read from the system clock, so the
@@ -117,6 +130,14 @@ pub struct BucketAccumulator {
     /// them). `None`/empty whenever no rule fired this tick. See schema
     /// 0.6.0-prototype.
     rule_match_seconds: BTreeMap<String, BTreeMap<String, BTreeMap<String, f64>>>,
+    /// Company Layer's second, independent categorization channel —
+    /// see `Tick::company_category`'s doc comment. Gated by the SAME
+    /// `consent.active_app_category` as `category_seconds` (it's still
+    /// "was I tracking categories at all" consent, just a different
+    /// rule source) — deliberately NOT gated by `app_detail` too, since
+    /// this channel has no per-app breakdown, mirroring
+    /// `category_seconds`'s own gate exactly, not `app_seconds`'s.
+    company_category_seconds: BTreeMap<String, f64>,
     keyboard_events: i64,
     mouse_move_events: i64,
     mouse_click_events: i64,
@@ -151,6 +172,7 @@ impl BucketAccumulator {
             other_app_seconds: BTreeMap::new(),
             category_app_seconds: BTreeMap::new(),
             rule_match_seconds: BTreeMap::new(),
+            company_category_seconds: BTreeMap::new(),
             keyboard_events: 0,
             mouse_move_events: 0,
             mouse_click_events: 0,
@@ -300,6 +322,20 @@ impl BucketAccumulator {
                     }
                 }
                 category = Some(resolved);
+
+                // Company Layer — второй, независимый канал (см.
+                // Tick::company_category's докстринг). Явный "other" при
+                // отсутствии совпадения, а не пропуск: иначе агрегат
+                // компании не отличил бы "ничего не классифицировано" от
+                // "тик вообще не пришёл".
+                let company_resolved = tick
+                    .company_category
+                    .clone()
+                    .unwrap_or_else(|| UNKNOWN_CATEGORY.to_string());
+                *self
+                    .company_category_seconds
+                    .entry(company_resolved)
+                    .or_insert(0.0) += tick.interval_seconds;
             }
 
             if self.segments_enabled() {
@@ -407,6 +443,13 @@ impl BucketAccumulator {
                     .map(|(category, inner)| (category.clone(), inner.clone()))
                     .collect()
             }),
+            // Company Layer — тот же гейт, что и category_seconds выше
+            // (см. company_category_seconds's докстринг за тем, почему
+            // не app_detail).
+            company_category_seconds: self
+                .consent
+                .active_app_category
+                .then(|| self.company_category_seconds.clone()),
         };
 
         self.category_seconds.clear();
@@ -414,6 +457,7 @@ impl BucketAccumulator {
         self.other_app_seconds.clear();
         self.category_app_seconds.clear();
         self.rule_match_seconds.clear();
+        self.company_category_seconds.clear();
         self.keyboard_events = 0;
         self.mouse_move_events = 0;
         self.mouse_click_events = 0;

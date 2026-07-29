@@ -179,6 +179,7 @@ fn tick(
         is_idle,
         category_override: category_override.map(|s| s.to_string()),
         matched_rule_key: None,
+        company_category: None,
         occurred_at: base_time()
             + chrono::Duration::milliseconds((interval * 1000.0 * at_index as f64) as i64),
         interval_seconds: interval,

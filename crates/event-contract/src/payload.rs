@@ -74,6 +74,20 @@ pub struct Signals {
     /// `None` for pre-0.6.0 agents or buckets where no rule fired at all.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rule_match_seconds: Option<BTreeMap<String, BTreeMap<String, BTreeMap<String, f64>>>>,
+    /// Schema 0.7.0-prototype (Company Layer) — SECOND, independent
+    /// categorization channel, computed ONLY from company/department
+    /// title/URL rules (see `agent-bin`'s `run_company_title_rules_loop`/
+    /// `run_company_url_rules_loop`), never from this user's own personal
+    /// rules or `active_app_category_seconds` above. Exists so a
+    /// company's group aggregate is comparable across every employee —
+    /// each one is bucketed by the exact same rule set, regardless of
+    /// what personal rules any individual has configured for their own
+    /// view. `None` when the user isn't in an active company, or their
+    /// agent predates this field. Never surfaced in this employee's own
+    /// Today/History — only fed into the company/department aggregate
+    /// (see backend's `company_aggregation.py`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub company_category_seconds: Option<BTreeMap<String, f64>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

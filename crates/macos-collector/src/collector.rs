@@ -38,6 +38,9 @@ pub struct MacosSignalCollector {
     input_counter: Option<InputCounter>,
     browser_process_names: HashSet<String>,
     browser_url_rules: UrlRules,
+    /// Company Layer — independent from `browser_url_rules` above, see
+    /// `normalization::Tick::company_category`'s doc comment.
+    company_browser_url_rules: UrlRules,
     address_bar_reader: AddressBarReader,
 }
 
@@ -52,6 +55,7 @@ impl MacosSignalCollector {
             .map(|name| name.to_lowercase())
             .collect(),
             browser_url_rules: Vec::new(),
+            company_browser_url_rules: Vec::new(),
             address_bar_reader: AddressBarReader::new(),
         }
     }
@@ -61,6 +65,12 @@ impl MacosSignalCollector {
     /// already-running collector.
     pub fn set_browser_url_rules(&mut self, browser_url_rules: UrlRules) {
         self.browser_url_rules = browser_url_rules;
+    }
+
+    /// Company Layer counterpart — see
+    /// `windows_collector::WindowsSignalCollector::set_company_browser_url_rules`.
+    pub fn set_company_browser_url_rules(&mut self, rules: UrlRules) {
+        self.company_browser_url_rules = rules;
     }
 
     /// The one place this crate's caller learns WHY input counting isn't
@@ -131,6 +141,20 @@ impl SignalCollector for MacosSignalCollector {
         let category_override = matched.as_ref().map(|(category, _)| category.clone());
         let matched_rule_key = matched.map(|(_, rule_key)| rule_key);
 
+        // Company Layer — second, independent classification pass, see
+        // `windows_collector::collector`'s poll() for the shared
+        // reasoning.
+        let company_category: Option<String> = match &active_process_name {
+            Some(process_name)
+                if should_classify_via_url(process_name, &self.browser_process_names, &self.company_browser_url_rules) =>
+            {
+                crate::active_app::frontmost_pid()
+                    .and_then(|pid| classify_browser_url(&mut self.address_bar_reader, pid, &self.company_browser_url_rules))
+                    .map(|(category, _keyword)| category)
+            }
+            _ => None,
+        };
+
         RawSignalSnapshot {
             active_process_name,
             keyboard_events,
@@ -140,6 +164,7 @@ impl SignalCollector for MacosSignalCollector {
             idle_seconds,
             category_override,
             matched_rule_key,
+            company_category,
         }
     }
 }

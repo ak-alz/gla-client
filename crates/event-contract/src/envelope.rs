@@ -5,16 +5,14 @@ use crate::validation::{validate, ContractViolation};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-/// The wire `schema_version` value this crate emits. Bumped to 0.6.1 for
-/// `rule_match_seconds` gaining an app-level nesting (was
-/// category -> rule_key -> seconds, now category -> app -> rule_key ->
-/// seconds — 0.6.0 shipped the flatter shape before the app-nesting need
-/// became clear). The backend detects the old flat shape by value type
-/// (see `Signals._normalize_legacy_flat_rule_match_shape` in
-/// `backend/app/models.py`) rather than by this string alone, so an
-/// already-updated 0.6.0 agent still ingests fine — this bump exists so
-/// the declared version stays honest about the actual wire shape.
-pub const SCHEMA_VERSION: &str = "0.6.1-prototype";
+/// The wire `schema_version` value this crate emits. Bumped to 0.7.0 for
+/// `Signals::company_category_seconds` (Company Layer) — a purely
+/// additive, optional field, so this bump is backward-compatible by
+/// construction: the backend's `supported_schema_versions` keeps every
+/// prior version too, and agents that haven't updated yet keep working
+/// unaffected (they just never send this field, since they were built
+/// before the Company Layer existed).
+pub const SCHEMA_VERSION: &str = "0.7.0-prototype";
 
 /// Versions the shape introduced by THIS crate (which envelope fields exist,
 /// their types) — independent of `SCHEMA_VERSION` above, which the legacy

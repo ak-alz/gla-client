@@ -68,6 +68,7 @@ fn tick_struct_has_no_field_capable_of_carrying_raw_window_title_text() {
         is_idle: false,
         category_override: Some("media".to_string()), // already-classified, per contract
         matched_rule_key: None,
+        company_category: None,
         occurred_at: base_time(),
         interval_seconds: 2.0,
     });
@@ -94,6 +95,7 @@ fn a_process_with_no_resolvable_name_still_gets_an_inspectable_app_seconds_entry
         is_idle: false,
         category_override: None,
         matched_rule_key: None,
+        company_category: None,
         occurred_at: base_time(),
         interval_seconds: 2.0,
     });
@@ -134,6 +136,7 @@ fn category_app_seconds_reflects_a_rule_reclassification_the_backend_could_not_d
         is_idle: false,
         category_override: Some("rest".to_string()),
         matched_rule_key: Some("url:youtube".to_string()),
+        company_category: None,
         occurred_at: base_time(),
         interval_seconds: 2.0,
     });
@@ -145,6 +148,7 @@ fn category_app_seconds_reflects_a_rule_reclassification_the_backend_could_not_d
         is_idle: false,
         category_override: Some("browser".to_string()),
         matched_rule_key: None,
+        company_category: None,
         occurred_at: base_time() + chrono::Duration::seconds(2),
         interval_seconds: 2.0,
     });
@@ -192,6 +196,7 @@ fn rule_match_seconds_is_none_when_no_rule_ever_fires_in_the_bucket() {
         is_idle: false,
         category_override: None,
         matched_rule_key: None,
+        company_category: None,
         occurred_at: base_time(),
         interval_seconds: 2.0,
     });
@@ -250,6 +255,7 @@ fn consent_off_yields_none_not_zero_even_when_the_underlying_activity_was_zero()
         is_idle: false,
         category_override: None,
         matched_rule_key: None,
+        company_category: None,
         occurred_at: base_time(),
         interval_seconds: 2.0,
     });
@@ -281,6 +287,7 @@ fn consent_on_and_genuinely_zero_yields_some_zero_not_none() {
         is_idle: false,
         category_override: None,
         matched_rule_key: None,
+        company_category: None,
         occurred_at: base_time(),
         interval_seconds: 2.0,
     });
@@ -314,6 +321,7 @@ fn a_long_real_gap_between_ticks_closes_the_open_segment_at_the_last_real_tick_n
         is_idle: false,
         category_override: None,
         matched_rule_key: None,
+        company_category: None,
         occurred_at: opened_at,
         interval_seconds: 2.0,
     });
@@ -327,6 +335,7 @@ fn a_long_real_gap_between_ticks_closes_the_open_segment_at_the_last_real_tick_n
         is_idle: false,
         category_override: None,
         matched_rule_key: None,
+        company_category: None,
         occurred_at: last_seen,
         interval_seconds: 2.0,
     });
@@ -341,6 +350,7 @@ fn a_long_real_gap_between_ticks_closes_the_open_segment_at_the_last_real_tick_n
         is_idle: false,
         category_override: None,
         matched_rule_key: None,
+        company_category: None,
         occurred_at: woke_up,
         interval_seconds: 2.0,
     });
@@ -357,6 +367,7 @@ fn a_long_real_gap_between_ticks_closes_the_open_segment_at_the_last_real_tick_n
         is_idle: false,
         category_override: None,
         matched_rule_key: None,
+        company_category: None,
         occurred_at: woke_up + chrono::Duration::seconds(2),
         interval_seconds: 2.0,
     });
@@ -413,6 +424,7 @@ fn a_short_gap_between_ticks_does_not_split_the_segment() {
         is_idle: false,
         category_override: None,
         matched_rule_key: None,
+        company_category: None,
         occurred_at: t0,
         interval_seconds: 2.0,
     });
@@ -424,6 +436,7 @@ fn a_short_gap_between_ticks_does_not_split_the_segment() {
         is_idle: false,
         category_override: None,
         matched_rule_key: None,
+        company_category: None,
         occurred_at: t1,
         interval_seconds: 2.0,
     });
@@ -475,6 +488,7 @@ fn a_long_same_category_dwell_is_split_across_multiple_flushes_not_one_retroacti
             is_idle: false,
             category_override: None,
             matched_rule_key: None,
+            company_category: None,
             occurred_at: at,
             interval_seconds: 2.0,
         });
@@ -541,6 +555,7 @@ fn set_category_overrides_affects_only_ticks_accumulated_afterward() {
             is_idle: false,
             category_override: None,
             matched_rule_key: None,
+            company_category: None,
             occurred_at: at,
             interval_seconds: 2.0,
         });
@@ -566,5 +581,93 @@ fn set_category_overrides_affects_only_ticks_accumulated_afterward() {
         category_seconds.get("communication").copied().unwrap_or(0.0),
         2.0,
         "the tick accumulated AFTER the override must use the new category"
+    );
+}
+
+// --- Company Layer: company_category_seconds is a second, independent channel ---
+
+#[test]
+fn company_category_seconds_is_independent_of_the_personal_category_override() {
+    // Real scenario the Company Layer plan is built to solve: the SAME
+    // tick has a personal category_override (this employee's own rule)
+    // that disagrees entirely with what the company channel would say.
+    // Neither channel may influence the other.
+    let mut acc = BucketAccumulator::new(full_consent(), BTreeMap::new(), 900.0);
+    acc.accumulate(&Tick {
+        active_process_name: Some("chrome.exe".to_string()),
+        keyboard_events: 0,
+        mouse_move_events: 0,
+        mouse_click_events: 0,
+        is_idle: false,
+        category_override: Some("rest".to_string()), // this employee's own personal rule says "rest"
+        matched_rule_key: Some("url:youtube".to_string()),
+        company_category: Some("task_tracker".to_string()), // company rule says "task_tracker"
+        occurred_at: base_time(),
+        interval_seconds: 5.0,
+    });
+    let signals = acc.flush(None);
+
+    let personal = signals.active_app_category_seconds.unwrap();
+    assert_eq!(personal.get("rest").copied(), Some(5.0));
+    assert_eq!(personal.get("task_tracker"), None, "the company category must never leak into the personal channel");
+
+    let company = signals.company_category_seconds.unwrap();
+    assert_eq!(company.get("task_tracker").copied(), Some(5.0));
+    assert_eq!(company.get("rest"), None, "the personal category must never leak into the company channel");
+}
+
+#[test]
+fn company_category_seconds_falls_back_to_other_when_no_company_rule_matched() {
+    // Per the Company Layer plan §3.2: an explicit "other" bucket for the
+    // company channel specifically, never silently dropped and never
+    // borrowing the personal channel's own default-heuristic resolution.
+    let mut acc = BucketAccumulator::new(full_consent(), BTreeMap::new(), 900.0);
+    acc.accumulate(&Tick {
+        active_process_name: Some("code.exe".to_string()),
+        keyboard_events: 0,
+        mouse_move_events: 0,
+        mouse_click_events: 0,
+        is_idle: false,
+        category_override: None, // falls through to categorize() -> "ide" for the personal channel
+        matched_rule_key: None,
+        company_category: None, // no company rule ever fires on an IDE process in this scenario
+        occurred_at: base_time(),
+        interval_seconds: 3.0,
+    });
+    let signals = acc.flush(None);
+
+    let personal = signals.active_app_category_seconds.unwrap();
+    assert_eq!(personal.get("ide").copied(), Some(3.0));
+
+    let company = signals.company_category_seconds.unwrap();
+    assert_eq!(
+        company.get("other").copied(),
+        Some(3.0),
+        "an unmatched tick must land in the company channel's own explicit 'other' bucket, not vanish"
+    );
+    assert_eq!(company.get("ide"), None, "the company channel must never borrow the personal channel's resolved category");
+}
+
+#[test]
+fn company_category_seconds_is_none_when_active_app_category_consent_is_off() {
+    let mut consent = full_consent();
+    consent.active_app_category = false;
+    let mut acc = BucketAccumulator::new(consent, BTreeMap::new(), 900.0);
+    acc.accumulate(&Tick {
+        active_process_name: Some("chrome.exe".to_string()),
+        keyboard_events: 0,
+        mouse_move_events: 0,
+        mouse_click_events: 0,
+        is_idle: false,
+        category_override: None,
+        matched_rule_key: None,
+        company_category: Some("task_tracker".to_string()),
+        occurred_at: base_time(),
+        interval_seconds: 5.0,
+    });
+    let signals = acc.flush(None);
+    assert_eq!(
+        signals.company_category_seconds, None,
+        "the company channel must respect the SAME consent gate as the personal one, not bypass it"
     );
 }
