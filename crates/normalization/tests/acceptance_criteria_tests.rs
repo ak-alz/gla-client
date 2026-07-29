@@ -168,9 +168,12 @@ fn category_app_seconds_reflects_a_rule_reclassification_the_backend_could_not_d
         .rule_match_seconds
         .expect("a rule fired this bucket — must be Some");
     assert_eq!(
-        rule_match_seconds.get("rest").and_then(|m| m.get("url:youtube")),
+        rule_match_seconds
+            .get("rest")
+            .and_then(|apps| apps.get("chrome.exe"))
+            .and_then(|rules| rules.get("url:youtube")),
         Some(&2.0),
-        "must attribute exactly the ruled-on seconds to the specific rule key that fired"
+        "must attribute exactly the ruled-on seconds to the specific app AND rule key that fired"
     );
     assert!(
         !rule_match_seconds.contains_key("browser"),

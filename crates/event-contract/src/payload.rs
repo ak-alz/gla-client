@@ -64,11 +64,16 @@ pub struct Signals {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub category_app_seconds: Option<BTreeMap<String, BTreeMap<String, f64>>>,
     /// Schema 0.6.0-prototype — time attributed specifically to a fired
-    /// title/URL rule, nested by resolved category then by a
-    /// `"title:<keyword>"`/`"url:<keyword>"` key. `None` for pre-0.6.0
-    /// agents or buckets where no rule fired at all.
+    /// title/URL rule, nested by resolved category, then by WHICH APP the
+    /// rule fired for, then by a `"title:<keyword>"`/`"url:<keyword>"`
+    /// key — the app-nesting level is what lets a consumer tell "this
+    /// app's time in this category came from this specific rule" apart
+    /// from other, unrelated apps/rules in the same category (a flat
+    /// category->rule map, this field's first cut, couldn't distinguish
+    /// that — found from a real, confusing double display it produced).
+    /// `None` for pre-0.6.0 agents or buckets where no rule fired at all.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub rule_match_seconds: Option<BTreeMap<String, BTreeMap<String, f64>>>,
+    pub rule_match_seconds: Option<BTreeMap<String, BTreeMap<String, BTreeMap<String, f64>>>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

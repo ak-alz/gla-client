@@ -105,11 +105,18 @@ pub struct BucketAccumulator {
     /// URL rule while the rest stayed "Браузер"). See schema 0.6.0-prototype.
     category_app_seconds: BTreeMap<String, BTreeMap<String, f64>>,
     /// Time attributed specifically to a fired title/URL rule, nested by
-    /// resolved category then by `Tick::matched_rule_key` — `None`/empty
-    /// whenever no rule fired this tick (plain per-process override or
-    /// default categorization don't populate this, only an actual
-    /// title/URL keyword match does). See schema 0.6.0-prototype.
-    rule_match_seconds: BTreeMap<String, BTreeMap<String, f64>>,
+    /// resolved category, then by WHICH APP the rule fired for, then by
+    /// `Tick::matched_rule_key` — the app-nesting level exists so a
+    /// consumer can tell "chrome.exe's own 26s in this category came
+    /// entirely from the plan.pixelplus.ru rule" apart from "some other
+    /// app in this category has nothing to do with any rule," which a
+    /// flat category->rule map (the first cut of this field) couldn't
+    /// distinguish — found from a real, confusing double-display the
+    /// first cut produced (an app row and an unrelated-looking "by rule"
+    /// row both showing the same duration, no visible connection between
+    /// them). `None`/empty whenever no rule fired this tick. See schema
+    /// 0.6.0-prototype.
+    rule_match_seconds: BTreeMap<String, BTreeMap<String, BTreeMap<String, f64>>>,
     keyboard_events: i64,
     mouse_move_events: i64,
     mouse_click_events: i64,
@@ -281,6 +288,8 @@ impl BucketAccumulator {
                         *self
                             .rule_match_seconds
                             .entry(resolved.clone())
+                            .or_default()
+                            .entry(app_key.clone())
                             .or_default()
                             .entry(rule_key.clone())
                             .or_insert(0.0) += tick.interval_seconds;
