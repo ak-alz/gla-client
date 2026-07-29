@@ -62,7 +62,14 @@ PrivilegesRequiredOverridesAllowed=commandline
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=..\..\dist\windows
-OutputBaseFilename=GrowthLayerAgentSetup-{#MyAppVersion}
+; Version-LESS filename, deliberately — the download page/docs link at
+; the stable `releases/latest/download/GrowthLayerAgentSetup.exe` URL
+; (same convention the Linux .deb/.rpm/tarball assets already use), which
+; only resolves if the uploaded asset is actually named that. A versioned
+; name here (the previous convention) silently 404s that link on every
+; release unless someone remembers to also upload a renamed copy by hand
+; — found for real when a user hit exactly that 404 on v0.1.23.
+OutputBaseFilename=GrowthLayerAgentSetup
 Compression=lzma
 SolidCompression=yes
 UninstallDisplayIcon={app}\{#MyAppExeName}
