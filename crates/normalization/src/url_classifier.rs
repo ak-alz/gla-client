@@ -67,6 +67,16 @@ pub fn extract_host(raw: &str) -> Option<String> {
 /// eTLD+1 comparison — this product's rules are user-authored keyword
 /// hints, not a security boundary.
 pub fn classify_url(raw_address_bar_text: Option<&str>, rules: &UrlRules) -> Option<String> {
+    classify_url_with_match(raw_address_bar_text, rules).map(|(category, _keyword)| category)
+}
+
+/// Same matching as `classify_url`, but also returns WHICH keyword
+/// matched — same reasoning as `title_classifier::classify_title_with_match`:
+/// the keyword is the user's own rule text, not the raw address, so
+/// returning it doesn't weaken the "raw address never leaves this module"
+/// guarantee above. Used by `BucketAccumulator` to attribute time to
+/// "which rule fired" (see `aggregation.rs`'s `rule_match_seconds`).
+pub fn classify_url_with_match(raw_address_bar_text: Option<&str>, rules: &UrlRules) -> Option<(String, String)> {
     let raw = raw_address_bar_text?;
     if rules.is_empty() {
         return None;
@@ -76,7 +86,7 @@ pub fn classify_url(raw_address_bar_text: Option<&str>, rules: &UrlRules) -> Opt
     for (category, patterns) in rules {
         for pattern in patterns {
             if !pattern.is_empty() && lowered.contains(&pattern.to_lowercase()) {
-                return Some(category.clone());
+                return Some((category.clone(), pattern.clone()));
             }
         }
     }

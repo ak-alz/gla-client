@@ -177,10 +177,17 @@ pub fn should_classify_via_url(
 
 /// Mirrors `browser_title::classify_browser_title` end to end: reads the
 /// address bar (a local, function-scoped `String` — see `read`, above),
-/// classifies it, and returns only the resulting category name. Only called
-/// when `should_read` (the same gating as `browser_title::should_classify`,
-/// reused directly — see `collector.rs`) is true.
-pub fn classify_browser_url(reader: &mut AddressBarReader, hwnd: usize, rules: &normalization::UrlRules) -> Option<String> {
+/// classifies it, and returns the resulting category name plus which
+/// keyword matched (the keyword is the user's own rule text, not the
+/// address — see `normalization::classify_url_with_match`'s doc comment).
+/// Only called when `should_read` (the same gating as
+/// `browser_title::should_classify`, reused directly — see `collector.rs`)
+/// is true.
+pub fn classify_browser_url(
+    reader: &mut AddressBarReader,
+    hwnd: usize,
+    rules: &normalization::UrlRules,
+) -> Option<(String, String)> {
     let text = reader.read(hwnd)?; // local variable, dropped at end of scope
-    normalization::classify_url(Some(&text), rules)
+    normalization::classify_url_with_match(Some(&text), rules)
 }

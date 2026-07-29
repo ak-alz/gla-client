@@ -118,15 +118,18 @@ impl SignalCollector for MacosSignalCollector {
         // see `browser_url.rs`'s doc comment for the real caveat: this
         // whole path is UNVERIFIED, never compiled/linked on real macOS
         // hardware.
-        let category_override = match &active_process_name {
+        let matched: Option<(String, String)> = match &active_process_name {
             Some(process_name)
                 if should_classify_via_url(process_name, &self.browser_process_names, &self.browser_url_rules) =>
             {
                 crate::active_app::frontmost_pid()
                     .and_then(|pid| classify_browser_url(&mut self.address_bar_reader, pid, &self.browser_url_rules))
+                    .map(|(category, keyword)| (category, format!("url:{keyword}")))
             }
             _ => None,
         };
+        let category_override = matched.as_ref().map(|(category, _)| category.clone());
+        let matched_rule_key = matched.map(|(_, rule_key)| rule_key);
 
         RawSignalSnapshot {
             active_process_name,
@@ -136,6 +139,7 @@ impl SignalCollector for MacosSignalCollector {
             is_idle: idle_seconds >= 120.0, // matches the 120s threshold windows-collector/linux-collector already use
             idle_seconds,
             category_override,
+            matched_rule_key,
         }
     }
 }

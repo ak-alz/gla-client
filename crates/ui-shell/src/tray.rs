@@ -74,9 +74,11 @@ const REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 // visibility of pause state (the "Pause status заметен" acceptance
 // criterion) — via alpha dimming on the SAME monochrome mark, not a hue
 // change (see icons.rs's doc comment for why: DESIGN_GUIDE.md never
-// permits color-coding status on the 16px mark).
-fn build_icon(icons: &TrayIcons, dark_background: bool, active: bool) -> Icon {
-    let rgba = icons.rgba_for(dark_background, /* dim = */ !active);
+// permits color-coding status on the 16px mark). `notify` draws the
+// corner dot when a real update is available — a separate, additive
+// overlay, not another attempt at hue-coding the mark itself.
+fn build_icon(icons: &TrayIcons, dark_background: bool, active: bool, notify: bool) -> Icon {
+    let rgba = icons.rgba_for(dark_background, /* dim = */ !active, notify);
     Icon::from_rgba(rgba, crate::icons::SIZE, crate::icons::SIZE)
         .expect("decoded tray PNG is always a valid icon buffer")
 }
@@ -220,8 +222,10 @@ impl App {
 
         let is_active = status.paired && !status.is_paused;
         let was_active = self.last_status.paired && !self.last_status.is_paused;
-        if is_active != was_active || dark_background != self.dark_background {
-            let icon = build_icon(&self.icons, dark_background, is_active);
+        let has_update = status.available_update_version.is_some();
+        let had_update = self.last_status.available_update_version.is_some();
+        if is_active != was_active || has_update != had_update || dark_background != self.dark_background {
+            let icon = build_icon(&self.icons, dark_background, is_active, has_update);
             // macOS: the combined setter is the only one that actually
             // re-applies the icon there when template mode is on (the
             // plain `set_icon` risks silently no-op'ing/resetting it per
@@ -232,6 +236,9 @@ impl App {
             let _ = self.tray.set_icon_with_as_template(Some(icon), true);
             #[cfg(not(target_os = "macos"))]
             let _ = self.tray.set_icon(Some(icon));
+        }
+        if status != self.last_status {
+            let _ = self.tray.set_tooltip(Some(crate::status::tooltip_line(&status)));
         }
         self.dark_background = dark_background;
         self.last_status = status;
@@ -330,7 +337,8 @@ fn build_app(
     let built = build_native_menu(&entries);
 
     let icons = TrayIcons::load();
-    let icon = build_icon(&icons, dark_background, is_active);
+    let has_update = initial_status.available_update_version.is_some();
+    let icon = build_icon(&icons, dark_background, is_active, has_update);
 
     // `with_icon_as_template` is a plain cross-platform builder method
     // whose effect is macOS-only (verified in tray-icon's own source —
@@ -339,7 +347,7 @@ fn build_app(
     // its own cfg-gate here).
     let tray = TrayIconBuilder::new()
         .with_menu(Box::new(built.menu))
-        .with_tooltip("DevPace")
+        .with_tooltip(crate::status::tooltip_line(&initial_status))
         .with_icon(icon)
         .with_icon_as_template(true)
         .build()?;

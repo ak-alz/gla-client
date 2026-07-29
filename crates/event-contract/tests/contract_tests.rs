@@ -40,6 +40,8 @@ fn valid_payload() -> Payload {
             git_commits_count: None,
             app_seconds: None,
             other_app_seconds: None,
+            category_app_seconds: None,
+            rule_match_seconds: None,
         },
         consent: event_contract::Consent {
             active_app_category: true,
@@ -94,7 +96,7 @@ fn legacy_wire_preserves_every_python_mvp_field_name_and_type() {
         );
     }
 
-    assert_eq!(obj["schema_version"], "0.5.0-prototype");
+    assert_eq!(obj["schema_version"], "0.6.0-prototype");
 
     let signals = obj["signals"].as_object().unwrap();
     for field in [

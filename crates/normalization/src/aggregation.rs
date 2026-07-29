@@ -29,6 +29,19 @@ pub struct Tick {
     pub mouse_click_events: i64,
     pub is_idle: bool,
     pub category_override: Option<String>,
+    /// `Some("title:<keyword>")`/`Some("url:<keyword>")` when
+    /// `category_override` came from a user-defined title/URL rule
+    /// specifically (not from a plain per-process override or the
+    /// default category map) — `None` otherwise, including when
+    /// `category_override` itself is `None`. The keyword is the user's
+    /// own rule text (already known to them, stored server-side), never
+    /// the raw title/address — see `title_classifier::
+    /// classify_title_with_match`/`url_classifier::classify_url_with_match`'s
+    /// doc comments. Lets `accumulate()` attribute time to "which rule
+    /// fired" (`rule_match_seconds`) separately from "which category
+    /// resulted" (`category_seconds`), which a plain per-process override
+    /// can't distinguish on its own.
+    pub matched_rule_key: Option<String>,
     /// The instant this tick was observed — used only for segment/gap
     /// timing math, mirroring the Python source's `datetime.now(timezone.utc)`
     /// calls (injected here rather than read from the system clock, so the
@@ -84,6 +97,19 @@ pub struct BucketAccumulator {
     category_seconds: BTreeMap<String, f64>,
     app_seconds: BTreeMap<String, f64>,
     other_app_seconds: BTreeMap<String, f64>,
+    /// Ground truth "which app contributed how much to which resolved
+    /// category," computed directly from the SAME per-tick `resolved`
+    /// value `category_seconds`/`app_seconds` already use — not a lossy
+    /// backend-side re-derivation from `app_seconds` alone (which can't
+    /// know that, say, 4 of chrome.exe's 10 minutes went to "Отдых" via a
+    /// URL rule while the rest stayed "Браузер"). See schema 0.6.0-prototype.
+    category_app_seconds: BTreeMap<String, BTreeMap<String, f64>>,
+    /// Time attributed specifically to a fired title/URL rule, nested by
+    /// resolved category then by `Tick::matched_rule_key` — `None`/empty
+    /// whenever no rule fired this tick (plain per-process override or
+    /// default categorization don't populate this, only an actual
+    /// title/URL keyword match does). See schema 0.6.0-prototype.
+    rule_match_seconds: BTreeMap<String, BTreeMap<String, f64>>,
     keyboard_events: i64,
     mouse_move_events: i64,
     mouse_click_events: i64,
@@ -116,6 +142,8 @@ impl BucketAccumulator {
             category_seconds: BTreeMap::new(),
             app_seconds: BTreeMap::new(),
             other_app_seconds: BTreeMap::new(),
+            category_app_seconds: BTreeMap::new(),
+            rule_match_seconds: BTreeMap::new(),
             keyboard_events: 0,
             mouse_move_events: 0,
             mouse_click_events: 0,
@@ -243,6 +271,20 @@ impl BucketAccumulator {
                         .unwrap_or_else(|| UNKNOWN_APP_LABEL.to_string());
                     *self.app_seconds.entry(app_key.clone()).or_insert(0.0) +=
                         tick.interval_seconds;
+                    *self
+                        .category_app_seconds
+                        .entry(resolved.clone())
+                        .or_default()
+                        .entry(app_key.clone())
+                        .or_insert(0.0) += tick.interval_seconds;
+                    if let Some(rule_key) = &tick.matched_rule_key {
+                        *self
+                            .rule_match_seconds
+                            .entry(resolved.clone())
+                            .or_default()
+                            .entry(rule_key.clone())
+                            .or_insert(0.0) += tick.interval_seconds;
+                    }
                     if resolved == UNKNOWN_CATEGORY {
                         *self.other_app_seconds.entry(app_key).or_insert(0.0) +=
                             tick.interval_seconds;
@@ -340,11 +382,29 @@ impl BucketAccumulator {
                 .then(|| self.app_seconds.clone()),
             other_app_seconds: (self.consent.active_app_category && self.consent.app_detail)
                 .then(|| self.other_app_seconds.clone()),
+            // Schema 0.6.0-prototype — ground truth from THIS bucket's own
+            // ticks, not a backend-side re-derivation (see both fields'
+            // struct-level doc comments for why that distinction matters).
+            // `rule_match_seconds` omits categories with an empty inner map
+            // (no rule fired for them this bucket) rather than sending
+            // empty entries — cheaper on the wire, and the backend already
+            // treats "missing" and "empty" the same way here.
+            category_app_seconds: (self.consent.active_app_category && self.consent.app_detail)
+                .then(|| self.category_app_seconds.clone()),
+            rule_match_seconds: (self.consent.active_app_category && self.consent.app_detail).then(|| {
+                self.rule_match_seconds
+                    .iter()
+                    .filter(|(_, inner)| !inner.is_empty())
+                    .map(|(category, inner)| (category.clone(), inner.clone()))
+                    .collect()
+            }),
         };
 
         self.category_seconds.clear();
         self.app_seconds.clear();
         self.other_app_seconds.clear();
+        self.category_app_seconds.clear();
+        self.rule_match_seconds.clear();
         self.keyboard_events = 0;
         self.mouse_move_events = 0;
         self.mouse_click_events = 0;

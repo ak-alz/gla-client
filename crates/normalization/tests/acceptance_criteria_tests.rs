@@ -67,6 +67,7 @@ fn tick_struct_has_no_field_capable_of_carrying_raw_window_title_text() {
         mouse_click_events: 0,
         is_idle: false,
         category_override: Some("media".to_string()), // already-classified, per contract
+        matched_rule_key: None,
         occurred_at: base_time(),
         interval_seconds: 2.0,
     });
@@ -92,6 +93,7 @@ fn a_process_with_no_resolvable_name_still_gets_an_inspectable_app_seconds_entry
         mouse_click_events: 0,
         is_idle: false,
         category_override: None,
+        matched_rule_key: None,
         occurred_at: base_time(),
         interval_seconds: 2.0,
     });
@@ -112,6 +114,91 @@ fn a_process_with_no_resolvable_name_still_gets_an_inspectable_app_seconds_entry
     // category_seconds's sum for the same period.
     let category_seconds = signals.active_app_category_seconds.unwrap();
     assert_eq!(category_seconds.get("other"), Some(&2.0));
+}
+
+// --- Schema 0.6.0: category_app_seconds / rule_match_seconds ---
+
+#[test]
+fn category_app_seconds_reflects_a_rule_reclassification_the_backend_could_not_derive_from_app_seconds_alone() {
+    // The exact real bug this field fixes: chrome.exe's time is split
+    // between two categories in the SAME bucket (some reclassified by a
+    // URL rule to "rest", the rest staying "browser") — app_seconds alone
+    // (just "chrome.exe: 4.0") can never tell those apart after the fact,
+    // only the agent, which saw the per-tick resolution, can.
+    let mut acc = BucketAccumulator::new(full_consent(), BTreeMap::new(), 900.0);
+    acc.accumulate(&Tick {
+        active_process_name: Some("chrome.exe".to_string()),
+        keyboard_events: 0,
+        mouse_move_events: 0,
+        mouse_click_events: 0,
+        is_idle: false,
+        category_override: Some("rest".to_string()),
+        matched_rule_key: Some("url:youtube".to_string()),
+        occurred_at: base_time(),
+        interval_seconds: 2.0,
+    });
+    acc.accumulate(&Tick {
+        active_process_name: Some("chrome.exe".to_string()),
+        keyboard_events: 0,
+        mouse_move_events: 0,
+        mouse_click_events: 0,
+        is_idle: false,
+        category_override: Some("browser".to_string()),
+        matched_rule_key: None,
+        occurred_at: base_time() + chrono::Duration::seconds(2),
+        interval_seconds: 2.0,
+    });
+    let signals = acc.flush(None);
+
+    let category_app_seconds = signals
+        .category_app_seconds
+        .expect("app_detail consent is on — must be Some");
+    assert_eq!(
+        category_app_seconds.get("rest").and_then(|m| m.get("chrome.exe")),
+        Some(&2.0),
+        "the reclassified 2s must show up under \"rest\", not lumped into \"browser\""
+    );
+    assert_eq!(
+        category_app_seconds.get("browser").and_then(|m| m.get("chrome.exe")),
+        Some(&2.0),
+        "the NON-reclassified 2s must stay under \"browser\""
+    );
+
+    let rule_match_seconds = signals
+        .rule_match_seconds
+        .expect("a rule fired this bucket — must be Some");
+    assert_eq!(
+        rule_match_seconds.get("rest").and_then(|m| m.get("url:youtube")),
+        Some(&2.0),
+        "must attribute exactly the ruled-on seconds to the specific rule key that fired"
+    );
+    assert!(
+        !rule_match_seconds.contains_key("browser"),
+        "no rule fired for the plain \"browser\" tick — must not appear in rule_match_seconds at all"
+    );
+}
+
+#[test]
+fn rule_match_seconds_is_none_when_no_rule_ever_fires_in_the_bucket() {
+    let mut acc = BucketAccumulator::new(full_consent(), BTreeMap::new(), 900.0);
+    acc.accumulate(&Tick {
+        active_process_name: Some("code.exe".to_string()),
+        keyboard_events: 0,
+        mouse_move_events: 0,
+        mouse_click_events: 0,
+        is_idle: false,
+        category_override: None,
+        matched_rule_key: None,
+        occurred_at: base_time(),
+        interval_seconds: 2.0,
+    });
+    let signals = acc.flush(None);
+    assert_eq!(
+        signals.rule_match_seconds,
+        Some(BTreeMap::new()),
+        "app_detail consent is on, so this is Some — just an empty map, not None, matching \
+         category_app_seconds/app_seconds's own \"measured, found nothing\" convention"
+    );
 }
 
 // --- "Algorithm version сохраняется" ---
@@ -159,6 +246,7 @@ fn consent_off_yields_none_not_zero_even_when_the_underlying_activity_was_zero()
         mouse_click_events: 0,
         is_idle: false,
         category_override: None,
+        matched_rule_key: None,
         occurred_at: base_time(),
         interval_seconds: 2.0,
     });
@@ -189,6 +277,7 @@ fn consent_on_and_genuinely_zero_yields_some_zero_not_none() {
         mouse_click_events: 0,
         is_idle: false,
         category_override: None,
+        matched_rule_key: None,
         occurred_at: base_time(),
         interval_seconds: 2.0,
     });
@@ -221,6 +310,7 @@ fn a_long_real_gap_between_ticks_closes_the_open_segment_at_the_last_real_tick_n
         mouse_click_events: 0,
         is_idle: false,
         category_override: None,
+        matched_rule_key: None,
         occurred_at: opened_at,
         interval_seconds: 2.0,
     });
@@ -233,6 +323,7 @@ fn a_long_real_gap_between_ticks_closes_the_open_segment_at_the_last_real_tick_n
         mouse_click_events: 0,
         is_idle: false,
         category_override: None,
+        matched_rule_key: None,
         occurred_at: last_seen,
         interval_seconds: 2.0,
     });
@@ -246,6 +337,7 @@ fn a_long_real_gap_between_ticks_closes_the_open_segment_at_the_last_real_tick_n
         mouse_click_events: 0,
         is_idle: false,
         category_override: None,
+        matched_rule_key: None,
         occurred_at: woke_up,
         interval_seconds: 2.0,
     });
@@ -261,6 +353,7 @@ fn a_long_real_gap_between_ticks_closes_the_open_segment_at_the_last_real_tick_n
         mouse_click_events: 0,
         is_idle: false,
         category_override: None,
+        matched_rule_key: None,
         occurred_at: woke_up + chrono::Duration::seconds(2),
         interval_seconds: 2.0,
     });
@@ -316,6 +409,7 @@ fn a_short_gap_between_ticks_does_not_split_the_segment() {
         mouse_click_events: 0,
         is_idle: false,
         category_override: None,
+        matched_rule_key: None,
         occurred_at: t0,
         interval_seconds: 2.0,
     });
@@ -326,6 +420,7 @@ fn a_short_gap_between_ticks_does_not_split_the_segment() {
         mouse_click_events: 0,
         is_idle: false,
         category_override: None,
+        matched_rule_key: None,
         occurred_at: t1,
         interval_seconds: 2.0,
     });
@@ -376,6 +471,7 @@ fn a_long_same_category_dwell_is_split_across_multiple_flushes_not_one_retroacti
             mouse_click_events: 0,
             is_idle: false,
             category_override: None,
+            matched_rule_key: None,
             occurred_at: at,
             interval_seconds: 2.0,
         });
@@ -441,6 +537,7 @@ fn set_category_overrides_affects_only_ticks_accumulated_afterward() {
             mouse_click_events: 0,
             is_idle: false,
             category_override: None,
+            matched_rule_key: None,
             occurred_at: at,
             interval_seconds: 2.0,
         });

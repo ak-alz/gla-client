@@ -249,14 +249,17 @@ impl SignalCollector for LinuxSignalCollector {
         // separate signal this platform CAN support, via AT-SPI2 —
         // see `browser_url.rs`'s doc comment for its real verification
         // status (unverified against a live browser in this round).
-        let category_override = match &active_process_name {
+        let matched: Option<(String, String)> = match &active_process_name {
             Some(process_name)
                 if should_classify_via_url(process_name, &self.browser_process_names, &self.browser_url_rules) =>
             {
                 classify_browser_url(&mut self.address_bar_reader, process_name, &self.browser_url_rules)
+                    .map(|(category, keyword)| (category, format!("url:{keyword}")))
             }
             _ => None,
         };
+        let category_override = matched.as_ref().map(|(category, _)| category.clone());
+        let matched_rule_key = matched.map(|(_, rule_key)| rule_key);
 
         RawSignalSnapshot {
             active_process_name,
@@ -266,6 +269,7 @@ impl SignalCollector for LinuxSignalCollector {
             is_idle,
             idle_seconds,
             category_override,
+            matched_rule_key,
         }
     }
 }

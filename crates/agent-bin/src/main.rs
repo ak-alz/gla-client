@@ -378,6 +378,7 @@ fn run_collector_loop(
                 mouse_click_events: snapshot.mouse_click_events,
                 is_idle: snapshot.is_idle,
                 category_override: snapshot.category_override,
+                matched_rule_key: snapshot.matched_rule_key,
                 occurred_at: now,
                 interval_seconds: POLL_INTERVAL.as_secs_f64(),
             };

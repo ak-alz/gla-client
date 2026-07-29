@@ -103,7 +103,11 @@ impl SignalCollector for WindowsSignalCollector {
         // freshly-launched Firefox process whose accessibility engine
         // hasn't warmed up yet), so nothing regresses for users who only
         // ever set up title rules.
-        let category_override = match (hwnd, &active_process_name) {
+        // `(category, "title:<keyword>" | "url:<keyword>")` — the prefix
+        // records WHICH kind of rule fired, not just that one did, so
+        // `rule_match_seconds` (see aggregation.rs) can tell a title match
+        // apart from a URL match on the same keyword text.
+        let matched: Option<(String, String)> = match (hwnd, &active_process_name) {
             (Some(hwnd), Some(process_name)) => {
                 let should_read = crate::browser_url::should_classify_via_url(
                     process_name,
@@ -112,6 +116,7 @@ impl SignalCollector for WindowsSignalCollector {
                 );
                 let from_url = if should_read {
                     classify_browser_url(&mut self.address_bar_reader, hwnd, &self.browser_url_rules)
+                        .map(|(category, keyword)| (category, format!("url:{keyword}")))
                 } else {
                     None
                 };
@@ -122,10 +127,13 @@ impl SignalCollector for WindowsSignalCollector {
                         &self.browser_process_names,
                         &self.browser_title_rules,
                     )
+                    .map(|(category, keyword)| (category, format!("title:{keyword}")))
                 })
             }
             _ => None,
         };
+        let category_override = matched.as_ref().map(|(category, _)| category.clone());
+        let matched_rule_key = matched.map(|(_, rule_key)| rule_key);
 
         RawSignalSnapshot {
             active_process_name,
@@ -135,6 +143,7 @@ impl SignalCollector for WindowsSignalCollector {
             is_idle,
             idle_seconds,
             category_override,
+            matched_rule_key,
         }
     }
 }

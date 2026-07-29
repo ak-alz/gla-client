@@ -236,8 +236,15 @@ pub fn should_classify_via_url(process_name: &str, browser_process_names: &HashS
     browser_process_names.contains(&process_name.to_lowercase())
 }
 
-/// Mirrors `windows_collector::browser_url::classify_browser_url`.
-pub fn classify_browser_url(reader: &mut AddressBarReader, process_name: &str, rules: &UrlRules) -> Option<String> {
+/// Mirrors `windows_collector::browser_url::classify_browser_url` — returns
+/// the category plus which keyword matched (see
+/// `normalization::classify_url_with_match`'s doc comment on why exposing
+/// the keyword is safe).
+pub fn classify_browser_url(
+    reader: &mut AddressBarReader,
+    process_name: &str,
+    rules: &UrlRules,
+) -> Option<(String, String)> {
     let text = reader.read(process_name)?; // local variable, dropped at end of scope
-    normalization::classify_url(Some(&text), rules)
+    normalization::classify_url_with_match(Some(&text), rules)
 }

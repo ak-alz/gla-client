@@ -37,6 +37,28 @@ pub fn status_line(status: &AgentStatus) -> String {
     }
 }
 
+/// The tray icon's hover tooltip — real feedback: the menu already shows
+/// `status_line` once opened, but a glance at the tray icon itself (no
+/// click) showed nothing but the bare app name. An available update wins
+/// over the plain running/paused state — it's the one thing worth
+/// surfacing on a passive hover, the running/paused distinction is
+/// already visible via the icon's own dimming (see `icons.rs`). Not the
+/// same wording as `status_line` on purpose — this is a short tooltip
+/// line, not the fuller menu-item label.
+pub fn tooltip_line(status: &AgentStatus) -> String {
+    if status.available_update_version.is_some() {
+        return "DevPace — есть обновление".to_string();
+    }
+    if !status.paired {
+        return "DevPace — не привязано".to_string();
+    }
+    if status.is_paused {
+        "DevPace — остановлен".to_string()
+    } else {
+        "DevPace — работает".to_string()
+    }
+}
+
 /// Formats `last_sync` relative to `now` in coarse, human units — mirrors
 /// the kind of relative-time label already used elsewhere in this product
 /// (e.g. the frontend's dashboard), not a raw timestamp a user has to do
@@ -107,6 +129,23 @@ mod tests {
         assert_eq!(status_line(&status(false, true, None, 0)), "Не привязано"); // unpaired wins regardless of pause flag — pausing an unpaired agent isn't a meaningful state to surface separately
         assert_eq!(status_line(&status(true, true, None, 0)), "Приостановлено");
         assert_eq!(status_line(&status(true, false, None, 0)), "Работает");
+    }
+
+    #[test]
+    fn tooltip_line_covers_running_paused_unpaired_and_update_available() {
+        assert_eq!(tooltip_line(&status(true, false, None, 0)), "DevPace — работает");
+        assert_eq!(tooltip_line(&status(true, true, None, 0)), "DevPace — остановлен");
+        assert_eq!(tooltip_line(&status(false, false, None, 0)), "DevPace — не привязано");
+
+        let mut with_update = status(true, false, None, 0);
+        with_update.available_update_version = Some("0.1.99".to_string());
+        assert_eq!(tooltip_line(&with_update), "DevPace — есть обновление");
+
+        // An available update is worth surfacing even while paused/unpaired
+        // — it wins over both.
+        let mut paused_with_update = status(true, true, None, 0);
+        paused_with_update.available_update_version = Some("0.1.99".to_string());
+        assert_eq!(tooltip_line(&paused_with_update), "DevPace — есть обновление");
     }
 
     #[test]

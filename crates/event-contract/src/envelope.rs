@@ -5,12 +5,13 @@ use crate::validation::{validate, ContractViolation};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-/// The wire `schema_version` value this crate emits. Pinned to the value the
-/// current, unmodified backend already accepts (`AGENT_EVENT_PARITY.md` §1) —
-/// this crate adds envelope metadata as ADDITIVE fields (see `legacy_wire`),
-/// it does not change what `schema_version` itself means on the wire. Bumping
-/// this is a backend-coordinated change, out of this crate's scope.
-pub const SCHEMA_VERSION: &str = "0.5.0-prototype";
+/// The wire `schema_version` value this crate emits. Bumped to 0.6.0 for
+/// `Signals::category_app_seconds`/`rule_match_seconds` (see `payload.rs`) —
+/// both are additive/optional fields, so this bump is backward-compatible
+/// by construction: the backend's `supported_schema_versions` keeps every
+/// prior version too (see `backend/app/config.py`), and older agents that
+/// haven't updated yet keep sending the previous shape unaffected.
+pub const SCHEMA_VERSION: &str = "0.6.0-prototype";
 
 /// Versions the shape introduced by THIS crate (which envelope fields exist,
 /// their types) — independent of `SCHEMA_VERSION` above, which the legacy

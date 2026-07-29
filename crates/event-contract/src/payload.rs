@@ -54,6 +54,21 @@ pub struct Signals {
     pub app_seconds: Option<BTreeMap<String, f64>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub other_app_seconds: Option<BTreeMap<String, f64>>,
+    /// Schema 0.6.0-prototype — ground truth "which app contributed how
+    /// much to which resolved category," computed by the agent itself at
+    /// collection time (not re-derived by the backend from `app_seconds`
+    /// alone, which can't know a title/URL rule reclassified part of one
+    /// app's time). `None` for records from an agent older than 0.6.0 —
+    /// the backend falls back to its pre-existing `app_seconds`-based
+    /// re-derivation for those, unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category_app_seconds: Option<BTreeMap<String, BTreeMap<String, f64>>>,
+    /// Schema 0.6.0-prototype — time attributed specifically to a fired
+    /// title/URL rule, nested by resolved category then by a
+    /// `"title:<keyword>"`/`"url:<keyword>"` key. `None` for pre-0.6.0
+    /// agents or buckets where no rule fired at all.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rule_match_seconds: Option<BTreeMap<String, BTreeMap<String, f64>>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

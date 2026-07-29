@@ -46,19 +46,23 @@ fn read_window_title(hwnd: usize) -> String {
 
 /// Mirrors `_classify_browser_title(hwnd, process_name)` end to end: reads
 /// the title (a local, function-scoped `String` — see `read_window_title`),
-/// classifies it, and returns only the resulting category name.
+/// classifies it, and returns the resulting category name plus which
+/// keyword matched (the keyword is the user's own rule text, not the
+/// title — see `normalization::classify_title_with_match`'s doc comment
+/// on why returning it doesn't weaken the "title text itself never leaves
+/// this function" guarantee).
 #[cfg(windows)]
 pub fn classify_browser_title(
     hwnd: usize,
     process_name: &str,
     browser_process_names: &HashSet<String>,
     rules: &TitleRules,
-) -> Option<String> {
+) -> Option<(String, String)> {
     if !should_classify(process_name, browser_process_names, rules) {
         return None;
     }
     let title = read_window_title(hwnd); // local variable, dropped at end of scope
-    normalization::classify_title(Some(&title), rules)
+    normalization::classify_title_with_match(Some(&title), rules)
 }
 
 /// Non-Windows stub — see `idle::get_idle_seconds`'s doc comment for why
@@ -69,7 +73,7 @@ pub fn classify_browser_title(
     _process_name: &str,
     _browser_process_names: &HashSet<String>,
     _rules: &TitleRules,
-) -> Option<String> {
+) -> Option<(String, String)> {
     None
 }
 

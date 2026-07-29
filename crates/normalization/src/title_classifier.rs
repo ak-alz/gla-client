@@ -18,8 +18,23 @@
 pub type TitleRules = Vec<(String, Vec<String>)>;
 
 /// Returns the first matching category by substring (case-insensitive), or
-/// `None` if there are no rules or nothing matched.
+/// `None` if there are no rules or nothing matched. Thin wrapper over
+/// `classify_title_with_match` that discards which keyword matched —
+/// unchanged signature/behavior for existing callers (golden fixtures
+/// compare against this exact function).
 pub fn classify_title(title: Option<&str>, rules: &TitleRules) -> Option<String> {
+    classify_title_with_match(title, rules).map(|(category, _keyword)| category)
+}
+
+/// Same matching as `classify_title`, but also returns WHICH keyword
+/// matched — the keyword itself is the user's own rule text (something
+/// they typed into Settings), never the title, so returning it doesn't
+/// weaken the "title text itself never leaves this function" guarantee
+/// above: what leaves here is (a) a category name and (b) an already-known,
+/// user-authored keyword, never a substring of the actual title. Used by
+/// `BucketAccumulator` to attribute time to "which rule fired," not just
+/// "which category resulted" (see `aggregation.rs`'s `rule_match_seconds`).
+pub fn classify_title_with_match(title: Option<&str>, rules: &TitleRules) -> Option<(String, String)> {
     let title = title?;
     if title.is_empty() || rules.is_empty() {
         return None;
@@ -29,7 +44,7 @@ pub fn classify_title(title: Option<&str>, rules: &TitleRules) -> Option<String>
     for (category, patterns) in rules {
         for pattern in patterns {
             if !pattern.is_empty() && lowered.contains(&pattern.to_lowercase()) {
-                return Some(category.clone());
+                return Some((category.clone(), pattern.clone()));
             }
         }
     }

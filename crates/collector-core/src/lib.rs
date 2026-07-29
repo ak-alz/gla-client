@@ -26,6 +26,13 @@ pub struct RawSignalSnapshot {
     pub is_idle: bool,
     pub idle_seconds: f64,
     pub category_override: Option<String>,
+    /// `Some("title:<keyword>")`/`Some("url:<keyword>")` when
+    /// `category_override` came from a user-defined title/URL rule
+    /// specifically — see `normalization::Tick::matched_rule_key`'s doc
+    /// comment (this field exists purely to carry that same value from a
+    /// collector's `poll()` through to the `Tick` `agent-bin` builds from
+    /// this snapshot).
+    pub matched_rule_key: Option<String>,
 }
 
 /// The platform-agnostic contract every native collector implements.

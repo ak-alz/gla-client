@@ -78,6 +78,8 @@ fn make_envelope() -> Envelope {
                 git_commits_count: None,
                 app_seconds: None,
                 other_app_seconds: None,
+                category_app_seconds: None,
+                rule_match_seconds: None,
             },
             consent: Consent {
                 active_app_category: false,
