@@ -1,0 +1,18 @@
+{
+    "KPackageStructure": "KWin/Script",
+    "KPlugin": {
+        "Id": "growthlayeragent",
+        "Name": "Growth Layer Agent Helper",
+        "Description": "Reports which application's window is focused (app id and owning PID) over D-Bus to the Growth Layer desktop agent, so it can attribute activity to an app on KDE Plasma Wayland. Never reports window titles, keystrokes, or pointer coordinates — only which app is focused, mirroring the same narrow contract the agent already uses on X11/Hyprland/GNOME/Windows/macOS.",
+        "Icon": "preferences-system-windows-script-test",
+        "License": "MIT",
+        "Version": "1.0",
+        "Website": "https://github.com/ak-alz/gla-client",
+        "Authors": [
+            {
+                "Name": "Growth Layer"
+            }
+        ]
+    },
+    "X-Plasma-API": "javascript"
+}

@@ -8,13 +8,13 @@
 //! `lifecycle::Autostart`'s Linux path, not duplicated here).
 //!
 //! GNOME (Wayland) works via a companion Shell extension
-//! (`gnome_extension.rs`, `installer/linux/gnome-extension/`) when it's
-//! installed and loaded; otherwise, and on KDE (Wayland) always, this
-//! crate explicitly reports [`environment::UnsupportedReason`] rather
-//! than guessing or silently returning stale data — see
-//! `docs/02_ARCHITECTURE/AGENT_LINUX_CAPABILITY_MATRIX.md` (KDE still
-//! needs a not-yet-shipped KWin script) and the user's explicit scoping
-//! decision for this task.
+//! (`gnome_extension.rs`, `installer/linux/gnome-extension/`) and KDE
+//! Plasma (Wayland) via a companion KWin script (`kwin_script.rs`,
+//! `installer/linux/kwin-script/`), each when it's installed and loaded;
+//! otherwise this crate explicitly reports
+//! [`environment::UnsupportedReason`] rather than guessing or silently
+//! returning stale data — see `docs/02_ARCHITECTURE/
+//! AGENT_LINUX_CAPABILITY_MATRIX.md`.
 //!
 //! Never reads, stores, logs, or returns a window title, keystroke, or
 //! pointer coordinate — the same privacy invariant as
@@ -50,6 +50,8 @@ mod hyprland;
 mod input_counters;
 #[cfg(target_os = "linux")]
 mod input_events;
+#[cfg(target_os = "linux")]
+mod kwin_script;
 #[cfg(target_os = "linux")]
 mod native_loop;
 #[cfg(target_os = "linux")]

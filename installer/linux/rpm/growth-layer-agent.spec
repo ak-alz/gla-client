@@ -46,12 +46,24 @@ install -m 644 %{_agent_core_dir}/installer/linux/gnome-extension/metadata.json 
     %{_agent_core_dir}/installer/linux/gnome-extension/extension.js \
     %{buildroot}/usr/share/growth-layer-agent/gnome-extension/
 
+# KWin script source — see ../deb/build.sh's comment: staged read-only
+# here, but installed into the user's own home by the AGENT (kwin_script.rs),
+# not by %post, since enabling it means writing the user's kwinrc and
+# talking to KWin over the session bus.
+mkdir -p %{buildroot}/usr/share/growth-layer-agent/kwin-script/contents/code
+install -m 644 %{_agent_core_dir}/installer/linux/kwin-script/metadata.json \
+    %{buildroot}/usr/share/growth-layer-agent/kwin-script/
+install -m 644 %{_agent_core_dir}/installer/linux/kwin-script/contents/code/main.js \
+    %{buildroot}/usr/share/growth-layer-agent/kwin-script/contents/code/
+
 %files
 /usr/bin/growth-layer-agent
 /usr/share/icons/hicolor/*/apps/growth-layer-agent.png
 /usr/share/applications/growth-layer-agent.desktop
 /usr/share/growth-layer-agent/gnome-extension/metadata.json
 /usr/share/growth-layer-agent/gnome-extension/extension.js
+/usr/share/growth-layer-agent/kwin-script/metadata.json
+/usr/share/growth-layer-agent/kwin-script/contents/code/main.js
 
 %post
 # See ../deb/postinst's doc comment for the full reasoning this mirrors
