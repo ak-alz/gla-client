@@ -22,7 +22,7 @@ pkgdesc="Lightweight per-user desktop agent that collects activity signals for t
 arch=('x86_64')
 url="https://github.com/ak-alz/gla-client"
 license=('custom:proprietary')
-depends=('gtk3' 'glib2' 'gdk-pixbuf2' 'xdotool')
+depends=('gtk3' 'glib2' 'gdk-pixbuf2' 'xdotool' 'libayatana-appindicator')
 makedepends=('cargo' 'clang' 'git')
 optdepends=('gnome-shell-extension-appindicator: tray icon on stock GNOME (KDE/XFCE/Cinnamon already have native tray support)')
 provides=('growth-layer-agent')
@@ -73,4 +73,13 @@ package() {
         "$pkgdir/usr/share/growth-layer-agent/gnome-extension/metadata.json"
     install -Dm644 installer/linux/gnome-extension/extension.js \
         "$pkgdir/usr/share/growth-layer-agent/gnome-extension/extension.js"
+
+    # KWin script source — same read-only staging, but the per-user copy
+    # and the enabling are done by the agent itself (kwin_script.rs), not
+    # by growth-layer-agent-git.install: it needs the user's own kwinrc
+    # and KWin's session bus.
+    install -Dm644 installer/linux/kwin-script/metadata.json \
+        "$pkgdir/usr/share/growth-layer-agent/kwin-script/metadata.json"
+    install -Dm644 installer/linux/kwin-script/contents/code/main.js \
+        "$pkgdir/usr/share/growth-layer-agent/kwin-script/contents/code/main.js"
 }
