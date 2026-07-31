@@ -7,12 +7,13 @@
 //!
 //! Per AG-LNX-001's capability matrix and the user's explicit scoping
 //! decision for AG-LNX-002: X11 and Hyprland get real backends here.
-//! GNOME is detected as needing its companion Shell extension by THIS
-//! pure function — `collector.rs` is the layer that actually probes
-//! whether that extension is installed/loaded and only then falls back
-//! to reporting it unsupported. KDE and any other/unrecognized Wayland
-//! compositor report an explicit unsupported status rather than
-//! guessing or silently returning stale data — "Missing capability
+//! GNOME is detected as needing its companion Shell extension, and KDE
+//! its companion KWin script, by THIS pure function — `collector.rs` is
+//! the layer that actually probes whether that companion is installed/
+//! loaded and only then falls back to reporting it unsupported. Any
+//! other/unrecognized Wayland compositor reports an explicit unsupported
+//! status rather than guessing or silently returning stale data —
+//! "Missing capability
 //! returns explicit status" is this task's own acceptance criterion,
 //! not an afterthought.
 
@@ -39,8 +40,14 @@ pub enum UnsupportedReason {
     /// actually attempts the D-Bus call before falling back to this.
     /// See AGENT_LINUX_CAPABILITY_MATRIX.md.
     GnomeRequiresShellExtension,
-    /// KWin scripting requires a loaded KWin script (not shipped by this
-    /// task) — see AGENT_LINUX_CAPABILITY_MATRIX.md.
+    /// KWin exposes the focused window only to a loaded KWin script — the
+    /// companion script (`installer/linux/kwin-script/`, `kwin_script.rs`)
+    /// closes this, and unlike GNOME it can be loaded without a re-login,
+    /// but it still has to be installed AND enabled. This variant means it
+    /// wasn't loaded right now, for any of those reasons — `collector.rs`
+    /// is the layer that actually tries to install/enable/reload it and
+    /// asks KWin `isScriptLoaded` before falling back to this.
+    /// See AGENT_LINUX_CAPABILITY_MATRIX.md.
     KdeRequiresKWinScript,
     /// A Wayland compositor other than GNOME/KDE/Hyprland — no generic
     /// active-window API exists (Wayland's client-isolation design), and
@@ -122,8 +129,11 @@ mod tests {
         );
     }
 
+    /// Same shape as the GNOME case above: this reason IS the trigger
+    /// `collector.rs` acts on to install/enable/reload the companion KWin
+    /// script, and it stays the honest answer whenever that fails.
     #[test]
-    fn kde_wayland_is_explicitly_unsupported() {
+    fn kde_wayland_routes_to_the_kwin_script_probe() {
         assert_eq!(
             detect_active_window_backend(Some("wayland"), Some("KDE"), None),
             ActiveWindowBackend::Unsupported(UnsupportedReason::KdeRequiresKWinScript)

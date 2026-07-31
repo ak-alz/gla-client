@@ -58,6 +58,18 @@ cp "$AGENT_CORE_DIR/installer/linux/gnome-extension/metadata.json" \
    "$AGENT_CORE_DIR/installer/linux/gnome-extension/extension.js" \
    "$STAGE/usr/share/growth-layer-agent/gnome-extension/"
 
+# KWin script source, staged the same read-only way for the same reason
+# (KDE Plasma Wayland active-window detection, see kwin_script.rs) — but
+# the per-user copy is made by the AGENT itself, not by postinst: enabling
+# a KWin script means writing the user's own kwinrc and calling KWin over
+# its session D-Bus, which is exactly the root->runuser dance that already
+# failed for the GNOME extension (see gnome_extension.rs L41-55).
+mkdir -p "$STAGE/usr/share/growth-layer-agent/kwin-script/contents/code"
+cp "$AGENT_CORE_DIR/installer/linux/kwin-script/metadata.json" \
+   "$STAGE/usr/share/growth-layer-agent/kwin-script/"
+cp "$AGENT_CORE_DIR/installer/linux/kwin-script/contents/code/main.js" \
+   "$STAGE/usr/share/growth-layer-agent/kwin-script/contents/code/"
+
 # postinst: the one real, root-only thing worth doing at install time —
 # see postinst's own header comment for why this replaces the earlier
 # "nothing for a maintainer script to correctly do here" position (true

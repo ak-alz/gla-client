@@ -10,6 +10,7 @@ use crate::evdev_counter::EvdevInputMonitor;
 use crate::gnome_extension::{self, GnomeExtensionSession};
 use crate::hyprland;
 use crate::input_counters::InputCounters;
+use crate::kwin_script::{self, KWinScriptSession};
 use crate::process_name::process_name_for_pid;
 use crate::x11::{X11Error, X11Session};
 use collector_core::{RawSignalSnapshot, SignalCollector};
@@ -35,6 +36,7 @@ enum ActiveWindowSource {
     X11(Box<X11Session>),
     Hyprland(PathBuf),
     GnomeExtension(GnomeExtensionSession),
+    KWinScript(KWinScriptSession),
     Unsupported(UnsupportedReason),
 }
 
@@ -59,6 +61,10 @@ pub struct LinuxSignalCollector {
     // ошибки отдельно, чтобы вызывающая сторона (agent-bin) могла его
     // реально куда-то записать.
     last_gnome_error: Option<String>,
+    /// KDE-шный аналог поля выше, по той же причине: `KdeRequiresKWinScript`
+    /// сам по себе не говорит, скрипт не установлен, выключен, или KWin
+    /// вообще не отвечает — а текст ошибки говорит.
+    last_kwin_error: Option<String>,
 }
 
 impl LinuxSignalCollector {
@@ -69,6 +75,7 @@ impl LinuxSignalCollector {
             input_counters: Arc::new(InputCounters::new()),
             evdev_monitor: None,
             last_gnome_error: None,
+            last_kwin_error: None,
             // Same six-browser list as windows_collector::platform's
             // browser_process_names() — Linux process names have no
             // ".exe" suffix, so they're spelled slightly differently, but
@@ -118,6 +125,36 @@ impl LinuxSignalCollector {
     pub fn last_gnome_extension_error(&self) -> Option<&str> {
         self.last_gnome_error.as_deref()
     }
+
+    /// The KDE counterpart of the accessor above — why the companion KWin
+    /// script isn't answering (not loaded, KWin not reachable, or the
+    /// session-bus name already taken by another agent instance).
+    pub fn last_kwin_script_error(&self) -> Option<&str> {
+        self.last_kwin_error.as_deref()
+    }
+}
+
+/// KDE Wayland: own the bus name, (re)install/enable/reload the script,
+/// then ask KWin whether it's actually loaded. Factored out because
+/// `start()` and `poll()`'s retry need this exact sequence, and the order
+/// is load-bearing — the name must exist before the reload, or the
+/// script's load-time push lands nowhere (see `kwin_script.rs`'s module
+/// doc).
+///
+/// Unlike GNOME's probe, liveness cannot be "did a call succeed": the
+/// script pushes, so an idle desktop legitimately has nothing to report.
+/// `isScriptLoaded` is the only honest signal.
+fn start_kwin_script() -> Result<KWinScriptSession, String> {
+    let session = KWinScriptSession::start().map_err(|err| err.to_string())?;
+    session.try_enable();
+    match session.is_script_loaded() {
+        Ok(true) => Ok(session),
+        Ok(false) => Err(format!(
+            "KWin reports the companion script (plugin id {}) is not loaded",
+            kwin_script::PLUGIN_ID
+        )),
+        Err(err) => Err(err.to_string()),
+    }
 }
 
 impl SignalCollector for LinuxSignalCollector {
@@ -165,6 +202,15 @@ impl SignalCollector for LinuxSignalCollector {
                     Err(err) => {
                         self.last_gnome_error = Some(err.to_string());
                         ActiveWindowSource::Unsupported(UnsupportedReason::GnomeRequiresShellExtension)
+                    }
+                }
+            }
+            ActiveWindowBackend::Unsupported(UnsupportedReason::KdeRequiresKWinScript) => {
+                match start_kwin_script() {
+                    Ok(session) => ActiveWindowSource::KWinScript(session),
+                    Err(err) => {
+                        self.last_kwin_error = Some(err);
+                        ActiveWindowSource::Unsupported(UnsupportedReason::KdeRequiresKWinScript)
                     }
                 }
             }
@@ -221,6 +267,26 @@ impl SignalCollector for LinuxSignalCollector {
             }
         }
 
+        // Same race, same fix, for KDE: KWin finishes loading its scripts
+        // after the agent's own autostart, so one failed attempt at
+        // startup must not mean "unsupported for this whole run". The
+        // retry costs one process spawn plus two D-Bus calls per poll, and
+        // only while this specific reason is the active one.
+        if matches!(
+            self.source,
+            Some(ActiveWindowSource::Unsupported(
+                UnsupportedReason::KdeRequiresKWinScript
+            ))
+        ) {
+            match start_kwin_script() {
+                Ok(session) => {
+                    self.last_kwin_error = None;
+                    self.source = Some(ActiveWindowSource::KWinScript(session));
+                }
+                Err(err) => self.last_kwin_error = Some(err),
+            }
+        }
+
         let (active_process_name, idle_seconds) = match &self.source {
             Some(ActiveWindowSource::X11(session)) => {
                 let pid = session.active_window_pid().ok().flatten();
@@ -244,6 +310,26 @@ impl SignalCollector for LinuxSignalCollector {
                 let pid = session.focused_window_pid().ok().flatten();
                 let process_name = pid.and_then(process_name_for_pid);
                 (process_name, self.input_counters.idle_seconds())
+            }
+            Some(ActiveWindowSource::KWinScript(session)) => {
+                // The script pushes, so the newest value is already in
+                // hand — but a value alone can't tell a quiet desktop
+                // apart from a script that stopped running (KWin
+                // restarted, the user switched it off in System Settings,
+                // the script threw). Ask KWin, and on anything but a
+                // clear "yes" re-enable it and report nothing for this
+                // tick rather than re-serving a push that may be old.
+                let pid = match session.is_script_loaded() {
+                    Ok(true) => session.focused_window_pid(),
+                    _ => {
+                        session.try_enable();
+                        None
+                    }
+                };
+                (
+                    pid.and_then(process_name_for_pid),
+                    self.input_counters.idle_seconds(),
+                )
             }
             Some(ActiveWindowSource::Unsupported(_)) | None => {
                 (None, self.input_counters.idle_seconds())

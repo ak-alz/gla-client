@@ -46,6 +46,17 @@ if [ -f "$SCRIPT_DIR/gnome-extension/metadata.json" ]; then
     cp "$SCRIPT_DIR/gnome-extension/metadata.json" "$SCRIPT_DIR/gnome-extension/extension.js" "$EXT_DEST/"
 fi
 
+# KWin script — the KDE Plasma counterpart (see kwin_script.rs). This
+# install has no /usr/share to stage into, so the user's own KWin script
+# dir IS the install location; enabling it is left to the agent, which
+# does it over KWin's session D-Bus at startup and self-heals afterwards.
+if [ -f "$SCRIPT_DIR/kwin-script/metadata.json" ]; then
+    KWIN_DEST="${XDG_DATA_HOME:-$HOME/.local/share}/kwin/scripts/growthlayeragent"
+    mkdir -p "$KWIN_DEST/contents/code"
+    cp "$SCRIPT_DIR/kwin-script/metadata.json" "$KWIN_DEST/"
+    cp "$SCRIPT_DIR/kwin-script/contents/code/main.js" "$KWIN_DEST/contents/code/"
+fi
+
 # Best-effort — not every desktop environment has these tools, and a
 # missing one is never fatal to the install (the icon still appears
 # correctly on next login/re-scan even without a manual cache refresh).

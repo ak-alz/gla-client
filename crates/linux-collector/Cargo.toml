@@ -4,7 +4,7 @@ version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "Linux implementation of the platform signal collector: X11 (EWMH active window, XScreenSaver idle) and Hyprland (IPC) active-window backends, evdev-based input-event counting shared by both, DE-agnostic session/power via logind D-Bus. GNOME/KDE report an explicit unsupported status pending a not-yet-shipped Shell extension/KWin script (see docs/02_ARCHITECTURE/AGENT_LINUX_CAPABILITY_MATRIX.md)."
+description = "Linux implementation of the platform signal collector: X11 (EWMH active window, XScreenSaver idle) and Hyprland (IPC) active-window backends, evdev-based input-event counting shared by both, DE-agnostic session/power via logind D-Bus. GNOME and KDE Plasma (Wayland) work through their own companion components (a Shell extension and a KWin script) and report an explicit unsupported status while those aren't loaded (see docs/02_ARCHITECTURE/AGENT_LINUX_CAPABILITY_MATRIX.md)."
 
 [dependencies]
 collector-core = { path = "../collector-core" }

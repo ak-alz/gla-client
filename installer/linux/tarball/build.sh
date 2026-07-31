@@ -47,6 +47,11 @@ cp "$AGENT_CORE_DIR/installer/linux/gnome-extension/metadata.json" \
    "$AGENT_CORE_DIR/installer/linux/gnome-extension/extension.js" \
    "$ROOT/gnome-extension/"
 
+mkdir -p "$ROOT/kwin-script/contents/code"
+cp "$AGENT_CORE_DIR/installer/linux/kwin-script/metadata.json" "$ROOT/kwin-script/"
+cp "$AGENT_CORE_DIR/installer/linux/kwin-script/contents/code/main.js" \
+   "$ROOT/kwin-script/contents/code/"
+
 mkdir -p "$OUT_DIR"
 TAR_PATH="$OUT_DIR/${PKG_NAME}.tar.gz"
 tar -czf "$TAR_PATH" -C "$STAGE" "$PKG_NAME"
