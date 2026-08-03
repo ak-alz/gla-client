@@ -18,12 +18,19 @@ const DEFAULT_CATEGORY_MAP: &[(&str, &str)] = &[
     ("brave.exe", "browser"),
     ("opera.exe", "browser"),
     ("yandex.exe", "browser"),
-    // IDE / development
-    ("code.exe", "ide"),
+    // IDE / development — Tier 1 dev-catalog tools (audit 05, doc 08) now
+    // map to the more specific "code" id instead of generic "ide"; tools
+    // NOT in the Tier 1 catalog keep the old "ide" id unchanged (not
+    // reclassified this round, still a valid category).
+    ("code.exe", "code"),
+    ("code - insiders.exe", "code"),
+    ("cursor.exe", "code"),
     ("devenv.exe", "ide"),
-    ("pycharm64.exe", "ide"),
-    ("idea64.exe", "ide"),
-    ("webstorm64.exe", "ide"),
+    ("pycharm64.exe", "code"),
+    ("idea64.exe", "code"),
+    ("idea.exe", "code"),
+    ("webstorm64.exe", "code"),
+    ("nvim.exe", "code"),
     ("sublime_text.exe", "ide"),
     ("notepad++.exe", "ide"),
     ("rider64.exe", "ide"),
@@ -39,31 +46,60 @@ const DEFAULT_CATEGORY_MAP: &[(&str, &str)] = &[
     ("pwsh.exe", "terminal"),
     ("windowsterminal.exe", "terminal"),
     ("wt.exe", "terminal"),
-    // Communication
-    ("slack.exe", "communication"),
-    ("teams.exe", "communication"),
-    ("ms-teams.exe", "communication"),
-    ("discord.exe", "communication"),
+    ("openconsole.exe", "terminal"),
+    ("ssh.exe", "terminal"),
+    // Infrastructure / containers (new — was folded into "other" before)
+    ("docker desktop.exe", "infra"),
+    ("com.docker.backend.exe", "infra"),
+    ("wsl.exe", "infra"),
+    ("wslhost.exe", "infra"),
+    // Version control (new)
+    ("git.exe", "vcs"),
+    // Data / API tooling (new)
+    ("dbeaver.exe", "data"),
+    ("postman.exe", "data"),
+    // AI tools (new)
+    ("claude.exe", "ai"),
+    // Communication (messaging) vs. Meetings (video calls) — split per
+    // audit 05 doc 07 §0: same generic "communication" umbrella hid a
+    // real difference in focus cost.
+    ("slack.exe", "comm"),
+    ("discord.exe", "comm"),
+    ("telegram.exe", "comm"),
     ("outlook.exe", "communication"),
     ("thunderbird.exe", "communication"),
-    ("telegram.exe", "communication"),
-    ("zoom.exe", "communication"),
-    // Office / documents
-    ("winword.exe", "office"),
-    ("excel.exe", "office"),
+    ("teams.exe", "meeting"),
+    ("ms-teams.exe", "meeting"),
+    ("zoom.exe", "meeting"),
+    ("cpthost.exe", "meeting"),
+    // Tasks / docs — was flat "office", now split by what the tool is FOR
+    ("winword.exe", "docs"),
+    ("excel.exe", "docs"),
     ("powerpnt.exe", "office"),
     ("onenote.exe", "office"),
     ("acrobat.exe", "office"),
-    ("notion.exe", "office"),
+    ("notion.exe", "tasks"),
+    ("obsidian.exe", "docs"),
+    // Design (new)
+    ("figma.exe", "design"),
     // Task trackers / CRM
     ("bitrix24.exe", "task_tracker"),
     // System
     ("explorer.exe", "system"),
     ("searchapp.exe", "system"),
     ("shellexperiencehost.exe", "system"),
-    // Media
-    ("spotify.exe", "media"),
+    // Personal (renamed from the old, judgier-sounding "media" bucket)
+    ("spotify.exe", "personal"),
+    ("yandexmusic.exe", "personal"),
     ("vlc.exe", "media"),
+    // Yandex Browser's real Windows process name is reportedly
+    // "browser.exe", not the "yandex.exe" entry below — kept both:
+    // the pre-existing entry (unverified but presumably field-tested)
+    // and this one from the audit 05 catalog (also flagged there as
+    // needing live-machine validation, see doc 08 §9's "67 of 129
+    // signatures need checking"). Do not remove either without testing
+    // on a real Yandex Browser install first.
+    ("browser.exe", "browser"),
     // Games
     ("steam.exe", "games"),
 
@@ -91,15 +127,19 @@ const DEFAULT_CATEGORY_MAP: &[(&str, &str)] = &[
     ("vivaldi-bin", "browser"),
     ("msedge", "browser"), // Edge for Linux
     ("yandex-browser", "browser"),
-    // IDE / development
-    ("code", "ide"), // VS Code
+    // IDE / development — same Tier 1 reclassification as the Windows
+    // block above ("ide" -> "code" for catalog tools only).
+    ("code", "code"), // VS Code
+    ("code-insiders", "code"),
+    ("cursor", "code"),
     ("code-oss", "ide"),
     ("codium", "ide"), // VSCodium
-    ("pycharm", "ide"),
-    ("idea", "ide"), // IntelliJ IDEA
+    ("pycharm", "code"),
+    ("idea", "code"), // IntelliJ IDEA
+    ("nvim", "code"),
     ("clion", "ide"),
     ("goland", "ide"),
-    ("webstorm", "ide"),
+    ("webstorm", "code"),
     ("rider", "ide"),
     ("phpstorm", "ide"),
     ("datagrip", "ide"),
@@ -122,19 +162,37 @@ const DEFAULT_CATEGORY_MAP: &[(&str, &str)] = &[
     ("foot", "terminal"), // wlroots-native terminal
     ("wezterm-gui", "terminal"),
     ("st", "terminal"), // suckless terminal
-    // Communication
-    ("slack", "communication"),
-    ("discord", "communication"),
-    ("telegram", "communication"), // the actual Telegram Desktop binary name
-    ("telegram-deskt", "communication"), // truncated "telegram-desktop" (some packagings)
+    ("ssh", "terminal"),
+    // Infrastructure / containers (new)
+    ("docker", "infra"),
+    ("dockerd", "infra"),
+    // Version control (new)
+    ("git", "vcs"),
+    // Data / API tooling (new)
+    ("dbeaver", "data"),
+    ("postman", "data"),
+    // AI tools (new)
+    ("claude", "ai"),
+    // Communication (messaging) vs. Meetings (video calls) — same split
+    // as the Windows block above.
+    ("slack", "comm"),
+    ("discord", "comm"),
+    ("telegram", "comm"), // the actual Telegram Desktop binary name
+    ("telegram-deskt", "comm"), // truncated "telegram-desktop" (some packagings)
+    ("telegram-desktop", "comm"), // untruncated form, some distros/packagings
     ("thunderbird", "communication"),
-    ("teams-for-linux", "communication"),
-    ("zoom", "communication"),
-    ("skypeforlinux", "communication"),
+    ("teams-for-linux", "meeting"),
+    ("zoom", "meeting"),
+    ("skypeforlinux", "meeting"),
     ("element-desktop", "communication"),
     ("signal-desktop", "communication"),
     ("mattermost-deskt", "communication"), // truncated "mattermost-desktop"
     // No native Linux Outlook exists -- not ported.
+    // Tasks / docs — was flat "office"
+    ("notion-app", "tasks"),
+    ("obsidian", "docs"),
+    // Design (new)
+    ("figma-linux", "design"),
     // Office / documents
     ("soffice.bin", "office"), // LibreOffice's actual process name (also covers OnlyOffice's LO-based fork)
     // Task trackers / CRM
@@ -144,9 +202,9 @@ const DEFAULT_CATEGORY_MAP: &[(&str, &str)] = &[
     ("dolphin", "system"), // KDE's file manager
     ("nemo", "system"), // Cinnamon's file manager
     ("thunar", "system"), // XFCE's file manager
-    // Media
+    // Personal (renamed from the old, judgier-sounding "media" bucket)
+    ("spotify", "personal"),
     ("vlc", "media"),
-    ("spotify", "media"),
     // Games
     ("lutris", "games"),
     ("heroic", "games"), // Heroic Games Launcher (Epic/GOG on Linux)
@@ -168,16 +226,40 @@ const GENERIC_UTILITY_KEYWORDS: &[&str] = &[
 ];
 
 const CATEGORY_LABELS: &[(&str, &str)] = &[
+    // Legacy generic taxonomy — kept for old records/accounts not yet
+    // reclassified into the dev taxonomy below.
     ("ide", "IDE"),
-    ("browser", "Браузер"),
-    ("terminal", "Терминал"),
     ("communication", "Коммуникации"),
     ("office", "Офис"),
     ("task_tracker", "Трекер задач"),
     ("crm", "CRM"),
-    ("system", "Система"),
     ("media", "Медиа"),
     ("games", "Игры"),
+    // Dev taxonomy (audit 05, doc 08 §9's category dict — labels copied
+    // verbatim from there, that JSON is the canonical source since it's
+    // built specifically "для загрузки в агент"). "browser"/"system"/
+    // "other" are shared with the legacy taxonomy above (same id, same
+    // meaning, not duplicated).
+    ("browser", "Браузер"),
+    ("system", "Система"),
+    ("code", "Код"),
+    ("terminal", "Терминал и инфраструктура"),
+    ("infra", "Инфраструктура и контейнеры"),
+    ("vcs", "Версионирование и ревью"),
+    ("data", "Данные и API"),
+    ("ai", "AI-инструменты"),
+    ("tasks", "Задачи и планирование"),
+    ("docs", "Документация и знания"),
+    ("comm", "Коммуникации"),
+    ("meeting", "Встречи и созвоны"),
+    ("design", "Дизайн и макеты"),
+    ("freelance", "Фриланс: биллинг и площадки"),
+    ("personal", "Личное и отдых"),
+    // "waiting" ("Ожидание сборки и тестов") deliberately NOT added here
+    // yet — detecting it needs background/child-process enumeration this
+    // agent doesn't do today (see collector-core::RawSignalSnapshot,
+    // which only ever carries the single foreground process). Tracked as
+    // a separate follow-up, not silently dropped.
     ("other", "Другое"),
 ];
 

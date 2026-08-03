@@ -4,6 +4,49 @@
 //! `artifacts/desktop-client/AG-006/generate_golden_fixtures.py`. This is
 //! genuine parity verification: the fixtures are Python's actual output,
 //! not a hand-derived guess at what it "should" produce.
+//!
+//! `agent/core` (the Python source these fixtures were captured from) is
+//! dead — the shipping agent is this Rust workspace, not that repo — so
+//! byte-for-byte parity stopped being the goal the moment a real product
+//! decision (audit 05's dev taxonomy) deliberately needs Rust to diverge.
+//! `DEV_TAXONOMY_RECLASSIFIED` below is the explicit, narrow list of
+//! process names this intentionally affects; every other fixture case
+//! still must match Python exactly. Not editing the fixture JSON itself
+//! to say something Python never produced — that would defeat the point
+//! of a "golden" fixture — the divergence is handled here, in the open.
+
+/// Process names whose category Rust now deliberately reports differently
+/// than the frozen Python source did, per audit 05 doc 07 §0's dev
+/// taxonomy (e.g. `code.exe`: Python said `"ide"`, Rust now says
+/// `"code"`). Lowercased, matching `categorize()`'s own normalization.
+const DEV_TAXONOMY_RECLASSIFIED: &[(&str, &str)] = &[
+    ("code.exe", "code"),
+    ("pycharm64.exe", "code"),
+    ("idea64.exe", "code"),
+    ("webstorm64.exe", "code"),
+    ("code", "code"),
+    ("pycharm", "code"),
+    ("idea", "code"),
+    ("webstorm", "code"),
+    ("slack.exe", "comm"),
+    ("discord.exe", "comm"),
+    ("telegram.exe", "comm"),
+    ("slack", "comm"),
+    ("discord", "comm"),
+    ("telegram", "comm"),
+    ("telegram-deskt", "comm"),
+    ("teams.exe", "meeting"),
+    ("ms-teams.exe", "meeting"),
+    ("zoom.exe", "meeting"),
+    ("teams-for-linux", "meeting"),
+    ("zoom", "meeting"),
+    ("skypeforlinux", "meeting"),
+    ("winword.exe", "docs"),
+    ("excel.exe", "docs"),
+    ("notion.exe", "tasks"),
+    ("spotify.exe", "personal"),
+    ("spotify", "personal"),
+];
 
 use chrono::{DateTime, Utc};
 use event_contract::{Consent, Signals};
@@ -54,14 +97,27 @@ fn categorize_matches_python_for_every_golden_case() {
         let process_name = json_string_or_none(&case["process_name"]);
         let overrides = json_overrides(&case["overrides"]);
         let expected_category = case["category"].as_str().unwrap();
-        let expected_label = case["label"].as_str().unwrap();
 
         let actual_category = categorize(process_name.as_deref(), overrides.as_ref());
-        assert_eq!(
-            actual_category, expected_category,
-            "categorize({process_name:?}, {overrides:?}) mismatch vs real Python output"
-        );
-        assert_eq!(category_label(&actual_category), expected_label);
+        let reclassified = process_name.as_deref().and_then(|name| {
+            DEV_TAXONOMY_RECLASSIFIED
+                .iter()
+                .find(|(key, _)| *key == name.trim().to_lowercase())
+                .map(|(_, category)| *category)
+        });
+        if let Some(new_category) = reclassified {
+            assert_eq!(
+                actual_category, new_category,
+                "categorize({process_name:?}, {overrides:?}) — expected dev-taxonomy reclassification, not Python parity"
+            );
+        } else {
+            let expected_label = case["label"].as_str().unwrap();
+            assert_eq!(
+                actual_category, expected_category,
+                "categorize({process_name:?}, {overrides:?}) mismatch vs real Python output"
+            );
+            assert_eq!(category_label(&actual_category), expected_label);
+        }
     }
 }
 
@@ -90,6 +146,16 @@ fn processes_for_category_matches_python() {
         .into_iter()
         .collect();
     for process in &expected {
+        // Reclassified process names moved OUT of this category into a
+        // new dev-taxonomy one — see DEV_TAXONOMY_RECLASSIFIED's doc
+        // comment. Python's fixture still lists them under the old
+        // category since it was captured before that product decision.
+        if DEV_TAXONOMY_RECLASSIFIED
+            .iter()
+            .any(|(key, new_category)| key == process && *new_category != category)
+        {
+            continue;
+        }
         assert!(
             actual.contains(process),
             "Rust's result for category {category:?} is missing {process:?}, which Python's fixture expects"
@@ -194,11 +260,37 @@ fn tick(
 /// raw string — chrono serializes as `...Z` while Python's `isoformat()`
 /// produces `...+00:00`; these are the same instant in different valid
 /// RFC3339 spellings, and a raw string comparison would wrongly fail here.
+/// Renames keys in an `active_app_category_seconds`-shaped JSON object that
+/// the dev taxonomy (audit 05) moved to a new category, so scenario
+/// fixtures captured from the frozen Python source still compare
+/// correctly. Every scenario tick in this file that resolves to one of
+/// `DEV_TAXONOMY_RECLASSIFIED`'s old categories uses `code.exe`
+/// specifically (verified by inspection of every `tick(...)` call above),
+/// so the only rename that ever actually applies here is `"ide" ->
+/// "code"` — this is intentionally NOT a general old-category ->
+/// new-category table, because e.g. old `"communication"` fans out to
+/// either `"comm"` or `"meeting"` depending on which specific app produced
+/// it, which this helper cannot know from a bare category string alone.
+fn reclassify_expected_category_key(mut value: Value) -> Value {
+    if let Value::Object(map) = &mut value {
+        if let Some(seconds) = map.remove("ide") {
+            map.insert("code".to_string(), seconds);
+        }
+    }
+    value
+}
+
+fn reclassify_expected_category_str(category: Option<&str>) -> Option<&str> {
+    match category {
+        Some("ide") => Some("code"),
+        other => other,
+    }
+}
+
 fn assert_signals_match_fixture(actual: &Signals, expected: &Value, scenario_name: &str) {
     let actual_json = serde_json::to_value(actual).unwrap();
 
     for field in [
-        "active_app_category_seconds",
         "input_activity_events",
         "idle_seconds",
         "active_seconds",
@@ -211,6 +303,11 @@ fn assert_signals_match_fixture(actual: &Signals, expected: &Value, scenario_nam
             "scenario {scenario_name:?}: field {field:?} mismatch"
         );
     }
+    assert_eq!(
+        actual_json["active_app_category_seconds"],
+        reclassify_expected_category_key(expected["active_app_category_seconds"].clone()),
+        "scenario {scenario_name:?}: field \"active_app_category_seconds\" mismatch"
+    );
 
     for field in ["activity_segments", "unexplained_gaps"] {
         let actual_list = actual_json[field].as_array();
@@ -220,7 +317,7 @@ fn assert_signals_match_fixture(actual: &Signals, expected: &Value, scenario_nam
             (Some(actual_list), Some(expected_list)) => {
                 assert_eq!(actual_list.len(), expected_list.len(), "scenario {scenario_name:?}: field {field:?} length mismatch");
                 for (a, e) in actual_list.iter().zip(expected_list.iter()) {
-                    assert_eq!(a["category"].as_str(), e.get("category").and_then(|v| v.as_str()), "scenario {scenario_name:?}: {field} category mismatch");
+                    assert_eq!(a["category"].as_str(), reclassify_expected_category_str(e.get("category").and_then(|v| v.as_str())), "scenario {scenario_name:?}: {field} category mismatch");
                     assert_eq!(a["duration_seconds"], e["duration_seconds"], "scenario {scenario_name:?}: {field} duration mismatch");
                     let a_started: DateTime<Utc> = a["started_at"].as_str().unwrap().parse().unwrap();
                     let e_started: DateTime<Utc> = e["started_at"].as_str().unwrap().parse().unwrap();

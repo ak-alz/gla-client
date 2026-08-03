@@ -457,7 +457,7 @@ fn a_short_gap_between_ticks_does_not_split_the_segment() {
         1,
         "flush() splits the still-open segment at its own boundary, but a short scheduling delay must not ALSO force-close it via the gap heuristic (that would show up as unexplained_gaps below, or a second segment)"
     );
-    assert_eq!(segments[0].category, "ide");
+    assert_eq!(segments[0].category, "code");
     assert_eq!(segments[0].started_at, t0);
     assert_eq!(segments[0].ended_at, t1);
     assert_eq!(signals.unexplained_gaps.unwrap().len(), 0);
@@ -628,7 +628,7 @@ fn company_category_seconds_falls_back_to_other_when_no_company_rule_matched() {
         mouse_move_events: 0,
         mouse_click_events: 0,
         is_idle: false,
-        category_override: None, // falls through to categorize() -> "ide" for the personal channel
+        category_override: None, // falls through to categorize() -> "code" for the personal channel
         matched_rule_key: None,
         company_category: None, // no company rule ever fires on an IDE process in this scenario
         occurred_at: base_time(),
@@ -637,7 +637,7 @@ fn company_category_seconds_falls_back_to_other_when_no_company_rule_matched() {
     let signals = acc.flush(None);
 
     let personal = signals.active_app_category_seconds.unwrap();
-    assert_eq!(personal.get("ide").copied(), Some(3.0));
+    assert_eq!(personal.get("code").copied(), Some(3.0));
 
     let company = signals.company_category_seconds.unwrap();
     assert_eq!(
@@ -645,7 +645,7 @@ fn company_category_seconds_falls_back_to_other_when_no_company_rule_matched() {
         Some(3.0),
         "an unmatched tick must land in the company channel's own explicit 'other' bucket, not vanish"
     );
-    assert_eq!(company.get("ide"), None, "the company channel must never borrow the personal channel's resolved category");
+    assert_eq!(company.get("code"), None, "the company channel must never borrow the personal channel's resolved category");
 }
 
 #[test]
