@@ -88,6 +88,20 @@ pub struct Signals {
     /// (see backend's `company_aggregation.py`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub company_category_seconds: Option<BTreeMap<String, f64>>,
+    /// Schema 0.7.0-prototype — opt-in personal tally of time spent per
+    /// browser domain (bare host only, via `url_classifier::extract_host`
+    /// — never path/query/title). Gated by a NEW, standalone consent
+    /// purpose (`domain_tracking`, backend's
+    /// `consent.py:CONSENT_PURPOSE_DOMAIN_TRACKING`) polled from
+    /// `GET /v1/agent/domain-tracking` (see `agent-bin`'s
+    /// `run_domain_tracking_poll_loop`) — deliberately NOT gated by
+    /// `Consent.active_app_category` the way `company_category_seconds`
+    /// is, since this is a fully separate, riskier opt-in the user must
+    /// accept explicitly (see backend's consent text). `None` when the
+    /// toggle is off, or the user hasn't enabled it. Personal channel
+    /// only — never fed into any company/team aggregate.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub domain_seconds: Option<BTreeMap<String, f64>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -103,6 +117,12 @@ pub struct Consent {
     pub git_activity: bool,
     #[serde(default)]
     pub app_detail: bool,
+    /// Echo of "domain tracking was enabled for this tick's bucket" —
+    /// audit-trail field, same role as `app_detail` above, not the
+    /// enforcement mechanism itself (that's the `GET
+    /// /v1/agent/domain-tracking` poll — see `Signals::domain_seconds`).
+    #[serde(default)]
+    pub domain_tracking: bool,
 }
 
 /// The part of a record that is genuinely payload (as opposed to envelope

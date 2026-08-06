@@ -65,6 +65,7 @@ fn main() {
                 category_app_seconds: None,
                 rule_match_seconds: None,
                 company_category_seconds: None,
+                domain_seconds: None,
             },
             consent: Consent {
                 active_app_category: true,
@@ -74,6 +75,7 @@ fn main() {
                 unexplained_gaps: false,
                 git_activity: false,
                 app_detail: false,
+                domain_tracking: false,
             },
             signature: None,
         },

@@ -83,6 +83,11 @@ const TITLE_RULES_POLL_INTERVAL: Duration = Duration::from_secs(5 * 60);
 // Same cadence/reasoning as TITLE_RULES_POLL_INTERVAL -- a person adding a
 // domain rule right now cares about it taking effect soon, not instantly.
 const URL_RULES_POLL_INTERVAL: Duration = Duration::from_secs(5 * 60);
+// Same cadence/reasoning as URL_RULES_POLL_INTERVAL -- a person flipping
+// the opt-in domain-tracking checkbox in Settings cares about it taking
+// effect soon, not instantly (and turning it OFF should stop new
+// collection soon too, not linger for a long cache window).
+const DOMAIN_TRACKING_POLL_INTERVAL: Duration = Duration::from_secs(5 * 60);
 // New versions don't ship often enough to justify a 5-minute cadence
 // (that's `category_overrides`' rhythm, matched to a person actively
 // fixing a miscategorized app right now) -- reaching everyone within a
@@ -140,6 +145,16 @@ struct SharedState {
     /// Company Layer counterpart of `url_rules`, for GET
     /// /v1/agent/company-url-rules.
     company_url_rules: Mutex<UrlRules>,
+    /// Opt-in personal domain tally toggle — written by
+    /// `run_domain_tracking_poll_loop`, read by `run_collector_loop` the
+    /// same rhythm as `url_rules` above. `false` (not tracking) until
+    /// proven otherwise by a real poll response — see
+    /// `paths::domain_tracking_enabled_cache_path`'s doc comment on why
+    /// that's the safe default, not just an arbitrary one. Fully
+    /// independent of `Consent` — see this file's hardcoded `Consent`
+    /// literal's own comment on why a live per-user toggle can't live
+    /// there.
+    domain_tracking_enabled: AtomicBool,
     /// Written by `run_update_check_loop`, read by the tray to decide
     /// what "Проверить обновления" shows/does — `None` means either "no
     /// update found yet" or "haven't checked yet," the tray doesn't need
@@ -338,6 +353,12 @@ fn run_collector_loop(
         unexplained_gaps: true,
         git_activity: false,
         app_detail: true,
+        // Build-capability flag, same meaning as every other field here
+        // (see this struct's construction site history) — NOT a live
+        // per-user toggle. The actual per-user gate is the separate
+        // `GET /v1/agent/domain-tracking` poll below, which is what
+        // decides whether `Tick::domain_host` is ever populated.
+        domain_tracking: true,
     };
     let mut accumulator = BucketAccumulator::new(
         consent.clone(),
@@ -390,6 +411,7 @@ fn run_collector_loop(
                 category_override: snapshot.category_override,
                 matched_rule_key: snapshot.matched_rule_key,
                 company_category: snapshot.company_category,
+                domain_host: snapshot.domain_host,
                 occurred_at: now,
                 interval_seconds: POLL_INTERVAL.as_secs_f64(),
             };
@@ -426,6 +448,11 @@ fn run_collector_loop(
             collector.set_company_browser_title_rules(state.company_title_rules.lock().unwrap().clone());
             #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
             collector.set_company_browser_url_rules(state.company_url_rules.lock().unwrap().clone());
+            // Opt-in personal domain tally -- same platform gating as the
+            // URL-based signals above (all three platforms already read
+            // the address bar for personal/company URL rules).
+            #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
+            collector.set_domain_tracking_enabled(state.domain_tracking_enabled.load(Ordering::Relaxed));
             let signals = accumulator.flush(None); // git_commits_count: out of scope, see config.rs
             match Envelope::build_or_quarantine(NewEnvelope {
                 device_id,
@@ -742,6 +769,47 @@ fn load_cached_company_url_rules() -> Option<UrlRules> {
     serde_json::from_slice(&bytes).ok()
 }
 
+/// Opt-in personal domain tally — polls GET /v1/agent/domain-tracking
+/// (response `{"enabled": bool}`, NOT a rules list — this is a plain
+/// on/off toggle, not category rules), same "stale but present beats
+/// none" reasoning as the rules-polling loops above. A transient
+/// network/auth failure keeps whatever value was already known rather
+/// than reverting to `false` — a brief backend hiccup must not silently
+/// stop a tally the person deliberately turned on.
+fn run_domain_tracking_poll_loop(state: Arc<SharedState>, backend_url: String, stop: Arc<AtomicBool>) {
+    while !stop.load(Ordering::Relaxed) {
+        let agent_token = state.agent_token.lock().unwrap().clone();
+        let url = format!("{}/v1/agent/domain-tracking", backend_url.trim_end_matches('/'));
+        let fetched = ureq::AgentBuilder::new()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .get(&url)
+            .set("X-Agent-Token", agent_token.expose())
+            .call()
+            .ok()
+            .and_then(|resp| resp.into_string().ok())
+            .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+            .and_then(|v| v.get("enabled").and_then(|e| e.as_bool()));
+
+        if let Some(enabled) = fetched {
+            let _ = std::fs::write(
+                paths::domain_tracking_enabled_cache_path(),
+                serde_json::to_vec(&enabled).unwrap_or_default(),
+            );
+            state
+                .domain_tracking_enabled
+                .store(enabled, Ordering::Relaxed);
+        }
+
+        sleep_in_slices(DOMAIN_TRACKING_POLL_INTERVAL, &stop);
+    }
+}
+
+fn load_cached_domain_tracking_enabled() -> Option<bool> {
+    let bytes = std::fs::read(paths::domain_tracking_enabled_cache_path()).ok()?;
+    serde_json::from_slice(&bytes).ok()
+}
+
 /// Real periodic check for `update_check.rs` — see that module's doc
 /// comment for the full story on why this loop didn't exist until now
 /// despite the crates it wires up already being built and tested.
@@ -864,6 +932,7 @@ fn main() {
         url_rules: Mutex::new(Vec::new()),
         company_title_rules: Mutex::new(Vec::new()),
         company_url_rules: Mutex::new(Vec::new()),
+        domain_tracking_enabled: AtomicBool::new(load_cached_domain_tracking_enabled().unwrap_or(false)),
         available_update: Mutex::new(None),
     });
 
@@ -914,6 +983,12 @@ fn main() {
         let backend_url = cfg.backend_url.clone();
         std::thread::spawn(move || run_company_url_rules_loop(state, backend_url, stop))
     };
+    let domain_tracking_thread = {
+        let state = Arc::clone(&state);
+        let stop = Arc::clone(&stop);
+        let backend_url = cfg.backend_url.clone();
+        std::thread::spawn(move || run_domain_tracking_poll_loop(state, backend_url, stop))
+    };
     let power_thread = {
         let state = Arc::clone(&state);
         let stop = Arc::clone(&stop);
@@ -961,6 +1036,7 @@ fn main() {
     let _ = title_rules_thread.join();
     let _ = company_title_rules_thread.join();
     let _ = company_url_rules_thread.join();
+    let _ = domain_tracking_thread.join();
     let _ = url_rules_thread.join();
     let _ = update_check_thread.join();
 

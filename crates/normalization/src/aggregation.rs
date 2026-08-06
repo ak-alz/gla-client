@@ -55,6 +55,15 @@ pub struct Tick {
     /// (see the Company Layer plan's §3.2: two independent
     /// categorization channels, not one shared priority order).
     pub company_category: Option<String>,
+    /// Bare browser domain for THIS tick (via
+    /// `url_classifier::extract_host` — never path/query/title), or `None`
+    /// when domain tracking is currently disabled (see agent-bin's
+    /// `run_domain_tracking_poll_loop`) or this tick's window isn't a
+    /// browser. Unlike `category_override`/`company_category`, there is no
+    /// rule-matching involved — this is a plain per-domain tally, gated by
+    /// its own standalone consent purpose (`domain_tracking`), not
+    /// `active_app_category`.
+    pub domain_host: Option<String>,
     /// The instant this tick was observed — used only for segment/gap
     /// timing math, mirroring the Python source's `datetime.now(timezone.utc)`
     /// calls (injected here rather than read from the system clock, so the
@@ -138,6 +147,16 @@ pub struct BucketAccumulator {
     /// this channel has no per-app breakdown, mirroring
     /// `category_seconds`'s own gate exactly, not `app_seconds`'s.
     company_category_seconds: BTreeMap<String, f64>,
+    /// Opt-in personal per-domain tally (see `Tick::domain_host`'s doc
+    /// comment) — gated purely by whether ticks carry a `domain_host` at
+    /// all, not by `consent.*` (this consent purpose lives outside the
+    /// hardcoded `Consent` struct entirely, see `agent-bin::main`'s
+    /// docstring on why). Empty map (not `None`) whenever no tick this
+    /// bucket had a domain — `flush()` turns that into `Signals::domain_seconds
+    /// = None`, mirroring `category_app_seconds`'s own "ground truth,
+    /// only if actually seen" gate rather than `company_category_seconds`'s
+    /// "always present when consent allows" gate.
+    domain_seconds: BTreeMap<String, f64>,
     keyboard_events: i64,
     mouse_move_events: i64,
     mouse_click_events: i64,
@@ -173,6 +192,7 @@ impl BucketAccumulator {
             category_app_seconds: BTreeMap::new(),
             rule_match_seconds: BTreeMap::new(),
             company_category_seconds: BTreeMap::new(),
+            domain_seconds: BTreeMap::new(),
             keyboard_events: 0,
             mouse_move_events: 0,
             mouse_click_events: 0,
@@ -338,6 +358,14 @@ impl BucketAccumulator {
                     .or_insert(0.0) += tick.interval_seconds;
             }
 
+            // Opt-in domain tally — own consent purpose, independent of
+            // `consent.active_app_category` above (see `domain_seconds`'s
+            // struct-level doc comment). `domain_host` is already `None`
+            // whenever the toggle is off, so no extra gate is needed here.
+            if let Some(host) = &tick.domain_host {
+                *self.domain_seconds.entry(host.clone()).or_insert(0.0) += tick.interval_seconds;
+            }
+
             if self.segments_enabled() {
                 if let Some(category) = &category {
                     if self.current_segment_category.as_deref() != Some(category.as_str()) {
@@ -450,6 +478,7 @@ impl BucketAccumulator {
                 .consent
                 .active_app_category
                 .then(|| self.company_category_seconds.clone()),
+            domain_seconds: (!self.domain_seconds.is_empty()).then(|| self.domain_seconds.clone()),
         };
 
         self.category_seconds.clear();
@@ -458,6 +487,7 @@ impl BucketAccumulator {
         self.category_app_seconds.clear();
         self.rule_match_seconds.clear();
         self.company_category_seconds.clear();
+        self.domain_seconds.clear();
         self.keyboard_events = 0;
         self.mouse_move_events = 0;
         self.mouse_click_events = 0;

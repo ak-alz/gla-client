@@ -43,6 +43,7 @@ fn valid_payload() -> Payload {
             category_app_seconds: None,
             rule_match_seconds: None,
             company_category_seconds: None,
+            domain_seconds: None,
         },
         consent: event_contract::Consent {
             active_app_category: true,
@@ -52,6 +53,7 @@ fn valid_payload() -> Payload {
             unexplained_gaps: false,
             git_activity: false,
             app_detail: false,
+            domain_tracking: false,
         },
         signature: None,
     }

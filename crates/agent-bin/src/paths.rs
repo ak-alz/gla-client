@@ -102,6 +102,16 @@ pub fn company_url_rules_cache_path() -> PathBuf {
     data_dir().join("company_url_rules_cache.json")
 }
 
+/// Last-successfully-fetched GET /v1/agent/domain-tracking response
+/// (the opt-in personal domain-tally toggle) — cached the same way as
+/// `title_rules_cache_path` so a restart while offline doesn't briefly
+/// revert an enabled toggle back to disabled. Absence of a cache file
+/// is read as `false` (the safe, non-tracking default), same as every
+/// other consent-gated signal in this codebase.
+pub fn domain_tracking_enabled_cache_path() -> PathBuf {
+    data_dir().join("domain_tracking_enabled_cache.json")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -40,6 +40,14 @@ pub struct RawSignalSnapshot {
     /// carry-through purpose as `matched_rule_key`: from a collector's
     /// `poll()` to the `Tick` `agent-bin` builds from this snapshot).
     pub company_category: Option<String>,
+    /// Bare browser domain for this tick (via
+    /// `normalization::extract_host`), only when domain tracking is
+    /// currently enabled AND this is a browser window — see
+    /// `normalization::Tick::domain_host`'s doc comment (same
+    /// carry-through purpose as `matched_rule_key`/`company_category`
+    /// above). No rule-matching involved, unlike those two fields — a
+    /// plain per-domain tally.
+    pub domain_host: Option<String>,
 }
 
 /// The platform-agnostic contract every native collector implements.

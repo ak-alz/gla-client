@@ -41,6 +41,9 @@ pub struct MacosSignalCollector {
     /// Company Layer — independent from `browser_url_rules` above, see
     /// `normalization::Tick::company_category`'s doc comment.
     company_browser_url_rules: UrlRules,
+    /// Opt-in personal domain tally — see
+    /// `windows_collector::WindowsSignalCollector`'s field of the same name.
+    domain_tracking_enabled: bool,
     address_bar_reader: AddressBarReader,
 }
 
@@ -56,6 +59,7 @@ impl MacosSignalCollector {
             .collect(),
             browser_url_rules: Vec::new(),
             company_browser_url_rules: Vec::new(),
+            domain_tracking_enabled: false,
             address_bar_reader: AddressBarReader::new(),
         }
     }
@@ -71,6 +75,11 @@ impl MacosSignalCollector {
     /// `windows_collector::WindowsSignalCollector::set_company_browser_url_rules`.
     pub fn set_company_browser_url_rules(&mut self, rules: UrlRules) {
         self.company_browser_url_rules = rules;
+    }
+
+    /// See `windows_collector::WindowsSignalCollector::set_domain_tracking_enabled`.
+    pub fn set_domain_tracking_enabled(&mut self, enabled: bool) {
+        self.domain_tracking_enabled = enabled;
     }
 
     /// The one place this crate's caller learns WHY input counting isn't
@@ -155,6 +164,22 @@ impl SignalCollector for MacosSignalCollector {
             _ => None,
         };
 
+        // Opt-in personal domain tally — see
+        // `windows_collector::collector`'s poll() for the shared reasoning
+        // on why this is its own gate, not `should_classify_via_url`.
+        let domain_host: Option<String> = if self.domain_tracking_enabled {
+            match &active_process_name {
+                Some(process_name) if self.browser_process_names.contains(&process_name.to_lowercase()) => {
+                    crate::active_app::frontmost_pid()
+                        .and_then(|pid| self.address_bar_reader.read(pid))
+                        .and_then(|raw| normalization::extract_host(&raw))
+                }
+                _ => None,
+            }
+        } else {
+            None
+        };
+
         RawSignalSnapshot {
             active_process_name,
             keyboard_events,
@@ -165,6 +190,7 @@ impl SignalCollector for MacosSignalCollector {
             category_override,
             matched_rule_key,
             company_category,
+            domain_host,
         }
     }
 }

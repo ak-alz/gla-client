@@ -35,6 +35,12 @@ pub struct WindowsSignalCollector {
     /// doc comment in `normalization::aggregation`).
     company_browser_title_rules: TitleRules,
     company_browser_url_rules: UrlRules,
+    /// Opt-in personal domain tally (see `Tick::domain_host`'s doc
+    /// comment) — off by default (matches every other consent-gated
+    /// signal in this codebase's default posture), flipped by
+    /// `agent-bin`'s `run_domain_tracking_poll_loop` via
+    /// `set_domain_tracking_enabled`.
+    domain_tracking_enabled: bool,
     address_bar_reader: AddressBarReader,
     hooks: Option<InputHooks>,
 }
@@ -55,6 +61,7 @@ impl WindowsSignalCollector {
             browser_url_rules: Vec::new(),
             company_browser_title_rules: Vec::new(),
             company_browser_url_rules: Vec::new(),
+            domain_tracking_enabled: false,
             address_bar_reader: AddressBarReader::new(),
             hooks: None,
         }
@@ -88,6 +95,14 @@ impl WindowsSignalCollector {
     /// `GET /v1/agent/company-url-rules`.
     pub fn set_company_browser_url_rules(&mut self, rules: UrlRules) {
         self.company_browser_url_rules = rules;
+    }
+
+    /// Refreshes the opt-in personal domain-tally toggle on an
+    /// already-running collector — same refresh mechanism as
+    /// `set_browser_url_rules`, for `GET /v1/agent/domain-tracking`.
+    /// Only affects ticks polled AFTER this call — never retroactive.
+    pub fn set_domain_tracking_enabled(&mut self, enabled: bool) {
+        self.domain_tracking_enabled = enabled;
     }
 }
 
@@ -189,6 +204,25 @@ impl SignalCollector for WindowsSignalCollector {
             _ => None,
         };
 
+        // Opt-in personal domain tally — no rule set involved, just "is
+        // this a browser window and is the toggle on right now." See
+        // `Tick::domain_host`'s doc comment for why this has its own
+        // standalone gate instead of piggybacking on `should_classify_via_url`
+        // (that helper requires a non-empty rule list, which has no
+        // meaning here).
+        let domain_host: Option<String> = if self.domain_tracking_enabled {
+            match (hwnd, &active_process_name) {
+                (Some(hwnd), Some(process_name)) if self.browser_process_names.contains(&process_name.to_lowercase()) => {
+                    self.address_bar_reader
+                        .read(hwnd)
+                        .and_then(|raw| normalization::extract_host(&raw))
+                }
+                _ => None,
+            }
+        } else {
+            None
+        };
+
         RawSignalSnapshot {
             active_process_name,
             keyboard_events,
@@ -199,6 +233,7 @@ impl SignalCollector for WindowsSignalCollector {
             category_override,
             matched_rule_key,
             company_category,
+            domain_host,
         }
     }
 }

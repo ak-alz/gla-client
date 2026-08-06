@@ -54,6 +54,7 @@ fn main() {
                 unexplained_gaps: false,
                 git_activity: false,
                 app_detail: false,
+                domain_tracking: false,
             },
             signature: None,
         };

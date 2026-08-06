@@ -22,6 +22,7 @@ fn full_consent() -> Consent {
         unexplained_gaps: true,
         git_activity: false,
         app_detail: true,
+        domain_tracking: false,
     }
 }
 
@@ -69,6 +70,7 @@ fn tick_struct_has_no_field_capable_of_carrying_raw_window_title_text() {
         category_override: Some("media".to_string()), // already-classified, per contract
         matched_rule_key: None,
         company_category: None,
+        domain_host: None,
         occurred_at: base_time(),
         interval_seconds: 2.0,
     });
@@ -96,6 +98,7 @@ fn a_process_with_no_resolvable_name_still_gets_an_inspectable_app_seconds_entry
         category_override: None,
         matched_rule_key: None,
         company_category: None,
+        domain_host: None,
         occurred_at: base_time(),
         interval_seconds: 2.0,
     });
@@ -137,6 +140,7 @@ fn category_app_seconds_reflects_a_rule_reclassification_the_backend_could_not_d
         category_override: Some("rest".to_string()),
         matched_rule_key: Some("url:youtube".to_string()),
         company_category: None,
+        domain_host: None,
         occurred_at: base_time(),
         interval_seconds: 2.0,
     });
@@ -149,6 +153,7 @@ fn category_app_seconds_reflects_a_rule_reclassification_the_backend_could_not_d
         category_override: Some("browser".to_string()),
         matched_rule_key: None,
         company_category: None,
+        domain_host: None,
         occurred_at: base_time() + chrono::Duration::seconds(2),
         interval_seconds: 2.0,
     });
@@ -197,6 +202,7 @@ fn rule_match_seconds_is_none_when_no_rule_ever_fires_in_the_bucket() {
         category_override: None,
         matched_rule_key: None,
         company_category: None,
+        domain_host: None,
         occurred_at: base_time(),
         interval_seconds: 2.0,
     });
@@ -238,6 +244,7 @@ fn consent_off_yields_none_not_zero_even_when_the_underlying_activity_was_zero()
             unexplained_gaps: false,
             git_activity: false,
             app_detail: false,
+            domain_tracking: false,
         },
         BTreeMap::new(),
         900.0,
@@ -256,6 +263,7 @@ fn consent_off_yields_none_not_zero_even_when_the_underlying_activity_was_zero()
         category_override: None,
         matched_rule_key: None,
         company_category: None,
+        domain_host: None,
         occurred_at: base_time(),
         interval_seconds: 2.0,
     });
@@ -288,6 +296,7 @@ fn consent_on_and_genuinely_zero_yields_some_zero_not_none() {
         category_override: None,
         matched_rule_key: None,
         company_category: None,
+        domain_host: None,
         occurred_at: base_time(),
         interval_seconds: 2.0,
     });
@@ -322,6 +331,7 @@ fn a_long_real_gap_between_ticks_closes_the_open_segment_at_the_last_real_tick_n
         category_override: None,
         matched_rule_key: None,
         company_category: None,
+        domain_host: None,
         occurred_at: opened_at,
         interval_seconds: 2.0,
     });
@@ -336,6 +346,7 @@ fn a_long_real_gap_between_ticks_closes_the_open_segment_at_the_last_real_tick_n
         category_override: None,
         matched_rule_key: None,
         company_category: None,
+        domain_host: None,
         occurred_at: last_seen,
         interval_seconds: 2.0,
     });
@@ -351,6 +362,7 @@ fn a_long_real_gap_between_ticks_closes_the_open_segment_at_the_last_real_tick_n
         category_override: None,
         matched_rule_key: None,
         company_category: None,
+        domain_host: None,
         occurred_at: woke_up,
         interval_seconds: 2.0,
     });
@@ -368,6 +380,7 @@ fn a_long_real_gap_between_ticks_closes_the_open_segment_at_the_last_real_tick_n
         category_override: None,
         matched_rule_key: None,
         company_category: None,
+        domain_host: None,
         occurred_at: woke_up + chrono::Duration::seconds(2),
         interval_seconds: 2.0,
     });
@@ -425,6 +438,7 @@ fn a_short_gap_between_ticks_does_not_split_the_segment() {
         category_override: None,
         matched_rule_key: None,
         company_category: None,
+        domain_host: None,
         occurred_at: t0,
         interval_seconds: 2.0,
     });
@@ -437,6 +451,7 @@ fn a_short_gap_between_ticks_does_not_split_the_segment() {
         category_override: None,
         matched_rule_key: None,
         company_category: None,
+        domain_host: None,
         occurred_at: t1,
         interval_seconds: 2.0,
     });
@@ -489,6 +504,7 @@ fn a_long_same_category_dwell_is_split_across_multiple_flushes_not_one_retroacti
             category_override: None,
             matched_rule_key: None,
             company_category: None,
+            domain_host: None,
             occurred_at: at,
             interval_seconds: 2.0,
         });
@@ -556,6 +572,7 @@ fn set_category_overrides_affects_only_ticks_accumulated_afterward() {
             category_override: None,
             matched_rule_key: None,
             company_category: None,
+            domain_host: None,
             occurred_at: at,
             interval_seconds: 2.0,
         });
@@ -602,6 +619,7 @@ fn company_category_seconds_is_independent_of_the_personal_category_override() {
         category_override: Some("rest".to_string()), // this employee's own personal rule says "rest"
         matched_rule_key: Some("url:youtube".to_string()),
         company_category: Some("task_tracker".to_string()), // company rule says "task_tracker"
+        domain_host: None,
         occurred_at: base_time(),
         interval_seconds: 5.0,
     });
@@ -631,6 +649,7 @@ fn company_category_seconds_falls_back_to_other_when_no_company_rule_matched() {
         category_override: None, // falls through to categorize() -> "code" for the personal channel
         matched_rule_key: None,
         company_category: None, // no company rule ever fires on an IDE process in this scenario
+        domain_host: None,
         occurred_at: base_time(),
         interval_seconds: 3.0,
     });
@@ -662,6 +681,7 @@ fn company_category_seconds_is_none_when_active_app_category_consent_is_off() {
         category_override: None,
         matched_rule_key: None,
         company_category: Some("task_tracker".to_string()),
+        domain_host: None,
         occurred_at: base_time(),
         interval_seconds: 5.0,
     });
