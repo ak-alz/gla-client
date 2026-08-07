@@ -216,6 +216,13 @@ impl SignalCollector for WindowsSignalCollector {
                     self.address_bar_reader
                         .read(hwnd)
                         .and_then(|raw| normalization::extract_host(&raw))
+                        // Real leak, found from a real person's own domain
+                        // tally: mid-typing a search phrase into the address
+                        // bar reads back as the LITERAL typed text, which
+                        // `extract_host` passes through unchanged (no URL
+                        // delimiters to strip) — see `looks_like_a_domain`'s
+                        // doc comment for the full story.
+                        .filter(|host| normalization::looks_like_a_domain(host))
                 }
                 _ => None,
             }

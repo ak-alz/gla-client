@@ -387,7 +387,12 @@ impl SignalCollector for LinuxSignalCollector {
                 Some(process_name) if self.browser_process_names.contains(&process_name.to_lowercase()) => self
                     .address_bar_reader
                     .read(process_name)
-                    .and_then(|raw| normalization::extract_host(&raw)),
+                    .and_then(|raw| normalization::extract_host(&raw))
+                    // See windows-collector's identical gate for the real
+                    // leak (a mid-typed search phrase read back as the
+                    // address bar's literal text) `looks_like_a_domain`
+                    // exists to filter out.
+                    .filter(|host| normalization::looks_like_a_domain(host)),
                 _ => None,
             }
         } else {

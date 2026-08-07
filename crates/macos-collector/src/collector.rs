@@ -173,6 +173,11 @@ impl SignalCollector for MacosSignalCollector {
                     crate::active_app::frontmost_pid()
                         .and_then(|pid| self.address_bar_reader.read(pid))
                         .and_then(|raw| normalization::extract_host(&raw))
+                        // See windows-collector's identical gate for the
+                        // real leak (a mid-typed search phrase read back as
+                        // the address bar's literal text) `looks_like_a_
+                        // domain` exists to filter out.
+                        .filter(|host| normalization::looks_like_a_domain(host))
                 }
                 _ => None,
             }

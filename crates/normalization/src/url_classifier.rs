@@ -58,6 +58,42 @@ pub fn extract_host(raw: &str) -> Option<String> {
     }
 }
 
+/// `true` only if `host` plausibly IS a domain, not arbitrary text that
+/// happened to survive `extract_host` unchanged because it contained none
+/// of that function's delimiters (`://`, `/`, `?`, `#`). Real leak found
+/// from a real person's own domain tally: typing a phrase directly into
+/// the address bar to search (a completely normal way to search from the
+/// omnibox) means the address bar's LITERAL current text, mid-keystroke,
+/// is the live phrase being typed, not a URL — `extract_host` correctly
+/// reads that real text (that's its job), but nothing downstream checked
+/// it was domain-shaped before treating it as one, so fragments like "п",
+/// "па", "прото пал или бдк" ended up stored and shown as "domains."
+///
+/// Deliberately NOT used inside `extract_host`/`classify_url` itself —
+/// `classify_url` only ever returns a category NAME the caller already
+/// defined, never the extracted host, so a garbage host there can't leak
+/// anything; only `Tick::domain_host` (which stores and displays the host
+/// verbatim) needs this second check. Callers apply it as a filter on
+/// `extract_host`'s result, e.g. `extract_host(raw).filter(|h|
+/// looks_like_a_domain(h))` — see each collector's `domain_host` gate.
+///
+/// Deliberately conservative: only ASCII letters/digits/hyphens/dots, at
+/// least one dot (so a bare single word — "авито", "localhost" — never
+/// passes; an acceptable loss for "which websites," not a correctness
+/// issue), no empty/leading-or-trailing-hyphen labels. Real domains
+/// always satisfy this; a typed phrase essentially never does.
+pub fn looks_like_a_domain(host: &str) -> bool {
+    if host.is_empty() || !host.contains('.') {
+        return false;
+    }
+    host.split('.').all(|label| {
+        !label.is_empty()
+            && !label.starts_with('-')
+            && !label.ends_with('-')
+            && label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+    })
+}
+
 /// Returns the first matching category by substring (case-insensitive) on
 /// the EXTRACTED HOST — never the raw address-bar text — or `None` if there
 /// are no rules, nothing to extract, or nothing matched. Substring, not
@@ -154,6 +190,41 @@ mod tests {
     fn empty_input_is_none() {
         assert_eq!(extract_host(""), None);
         assert_eq!(extract_host("   "), None);
+    }
+
+    #[test]
+    fn looks_like_a_domain_accepts_real_domains() {
+        assert!(looks_like_a_domain("chatgpt.com"));
+        assert!(looks_like_a_domain("youtube.com"));
+        assert!(looks_like_a_domain("tools.pixelplus.ru"));
+        assert!(looks_like_a_domain("xn--80ak6aa92e.com")); // punycode IDN
+    }
+
+    #[test]
+    fn looks_like_a_domain_rejects_a_real_leaked_search_query() {
+        // The real bug this function exists to fix: typing a phrase
+        // directly into the address bar to search it (`extract_host`
+        // correctly returns it unchanged — no `://`/`/`/`?`/`#` to strip
+        // on) must never be treated as a domain.
+        assert!(!looks_like_a_domain("прото пал или бдк"));
+        assert!(!looks_like_a_domain("п"));
+        assert!(!looks_like_a_domain("па"));
+    }
+
+    #[test]
+    fn looks_like_a_domain_rejects_a_bare_word_without_a_dot() {
+        assert!(!looks_like_a_domain("авито"));
+        assert!(!looks_like_a_domain("localhost"));
+    }
+
+    #[test]
+    fn looks_like_a_domain_rejects_empty_and_malformed_labels() {
+        assert!(!looks_like_a_domain(""));
+        assert!(!looks_like_a_domain("."));
+        assert!(!looks_like_a_domain("example."));
+        assert!(!looks_like_a_domain(".example.com"));
+        assert!(!looks_like_a_domain("-example.com"));
+        assert!(!looks_like_a_domain("example-.com"));
     }
 
     fn rules() -> UrlRules {
