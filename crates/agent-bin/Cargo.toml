@@ -1,6 +1,6 @@
 [package]
 name = "agent-bin"
-version = "0.1.29"
+version = "0.1.30"
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
@@ -22,10 +22,13 @@ secrets = { path = "../secrets" }
 # Real wiring for the update-check feature -- this crate existed, fully
 # built and tested, with no dependent anywhere in the workspace until
 # now (see update_check.rs's module doc comment for the full story).
-# `updater` (the download/stage/apply half) stays unused this round --
-# see update_check.rs's doc comment for why that's a deliberate,
-# separate next step, not an oversight.
 update-manifest = { path = "../update-manifest" }
+# apply_update.rs -- download+checksum only (disk_space/download); the
+# actual install is handed off to the platform's own already-tested
+# installer/install.sh (see apply_update.rs's module doc comment for
+# why that's simpler and safer than updater::staging/health's raw
+# binary-replace path for this round).
+updater = { path = "../updater" }
 ed25519-dalek = { version = "2", features = ["rand_core"] }
 semver = { version = "1", features = ["serde"] }
 chrono = { version = "0.4", features = ["clock"], default-features = false }

@@ -36,6 +36,7 @@
 //! What IS real here: every wired crate runs its actual,
 //! already-independently-reviewed code, not a stand-in.
 
+mod apply_update;
 mod config;
 mod pairing;
 mod paths;
@@ -220,15 +221,30 @@ impl AgentController for Controller {
         std::thread::spawn(move || run_pairing_flow(state, log));
     }
 
-    /// A known update already found by the background loop: no need to
-    /// make the person wait on a network call they don't need right
-    /// now -- open the release notes straight away. Nothing known yet:
-    /// this IS the explicit, deliberate user action a background poll
-    /// isn't, so a real (spawned, non-blocking-the-tray) check runs
+    /// A known update already found by the background loop: install it
+    /// now (real user feedback -- "приходится руками что-то ставить";
+    /// see `apply_update.rs`'s module doc comment for exactly how and
+    /// why this is safe) rather than merely pointing at release notes.
+    /// Falls back to opening release notes if this install method
+    /// isn't one-click-installable yet (`Unsupported`) or the attempt
+    /// itself fails (network, disk) -- the person should still be able
+    /// to reach the download page by hand. Nothing known yet: this IS
+    /// the explicit, deliberate user action a background poll isn't,
+    /// so a real (spawned, non-blocking-the-tray) check runs
     /// immediately rather than waiting up to `UPDATE_CHECK_POLL_INTERVAL`.
     fn check_for_updates(&self) {
         if let Some(update) = self.state.available_update.lock().unwrap().clone() {
-            let _ = ui_shell::open_url(&update.release_notes_url);
+            let log = Arc::clone(&self.log);
+            std::thread::spawn(move || {
+                let release_notes_url = update.release_notes_url.clone();
+                // apply() only ever returns on FAILURE -- success exits
+                // the whole process (see its own doc comment) as part
+                // of handing off to the platform installer/install.sh.
+                if let Err(err) = apply_update::apply(&update) {
+                    let _ = log.append(&format!("update install failed ({err}) -- opening release notes instead"));
+                    let _ = ui_shell::open_url(&release_notes_url);
+                }
+            });
             return;
         }
         let state = Arc::clone(&self.state);
@@ -878,7 +894,6 @@ fn main() {
         unregister_autostart();
         return;
     }
-
     std::fs::create_dir_all(paths::data_dir()).expect("create data dir");
     std::fs::create_dir_all(paths::log_dir()).expect("create log dir");
     // "Local DB permissions" (AG-SEC-001) — the data dir holds

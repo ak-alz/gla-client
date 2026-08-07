@@ -52,13 +52,15 @@ pub trait AgentController: Send + Sync + 'static {
     /// actual network calls/polling, never blocking this call site,
     /// which runs on the tray's own event-loop thread.
     fn pair_device(&self);
-    /// Click handler for "Проверить обновления"/"Доступно обновление
+    /// Click handler for "Проверить обновления"/"Установить обновление
     /// X.Y.Z". Must return promptly, same constraint as `pair_device` —
     /// implementations spawn their own thread for the actual network
-    /// check; if a verified update is already known, this instead opens
-    /// its release notes in the browser (see `agent-bin`'s `Controller`
-    /// impl) rather than making the user wait on a network call they
-    /// don't need right now.
+    /// check; if a verified update is already known, this instead
+    /// installs it (see `agent-bin`'s `Controller` impl and
+    /// `apply_update.rs`) rather than making the user wait on a network
+    /// call they don't need right now. Falls back to opening release
+    /// notes if this install method isn't one-click-installable yet
+    /// (system package installs, unsupported platforms).
     fn check_for_updates(&self);
 }
 

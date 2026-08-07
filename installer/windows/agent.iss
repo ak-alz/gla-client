@@ -52,7 +52,7 @@
 ; pairing or breaking the auto-updater, for a purely cosmetic gain — this
 ; rename only touches what a user actually sees.
 #define MyAppName "DevPace"
-#define MyAppVersion "0.1.29"
+#define MyAppVersion "0.1.30"
 #define MyAppPublisher "DevPace"
 #define MyAppExeName "growth-layer-agent.exe"
 

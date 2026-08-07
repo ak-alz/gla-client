@@ -96,12 +96,16 @@ pub fn build_menu(status: &AgentStatus, now: DateTime<Utc>) -> Vec<MenuEntry> {
     ));
     // Real now (previously disabled here until AG-UPD-001+ were wired —
     // see `agent-bin`'s `update_check` module for the fix). No known
-    // update: clicking runs an immediate check. A known, verified update:
-    // clicking opens its release notes — the agent never replaces its
-    // own binary silently, the person decides whether to install it.
+    // update: clicking runs an immediate check. A known, verified
+    // update: clicking installs it — real user feedback, "приходится
+    // руками что-то ставить" (see `agent-bin::apply_update`'s doc
+    // comment for exactly how, and why it isn't the same as silently
+    // replacing the running binary: the click itself is the person's
+    // explicit go-ahead, same "user_explicitly_confirmed" concept
+    // `updater::restart_policy` already defines).
     entries.push(MenuEntry::action(
         match &status.available_update_version {
-            Some(version) => format!("Доступно обновление {version}"),
+            Some(version) => format!("Установить обновление {version}"),
             None => "Проверить обновления".to_string(),
         },
         MenuAction::CheckForUpdates,
@@ -261,6 +265,6 @@ mod tests {
             .find(|e| e.action == Some(MenuAction::CheckForUpdates))
             .unwrap();
         assert!(entry.enabled);
-        assert_eq!(entry.label, "Доступно обновление 1.2.3");
+        assert_eq!(entry.label, "Установить обновление 1.2.3");
     }
 }

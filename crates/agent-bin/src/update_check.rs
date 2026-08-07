@@ -41,6 +41,18 @@ const VERIFYING_KEY_HEX: &str = "1b4fe7aa87005ba4593159a56802fd5ac033506630e4f9d
 pub struct AvailableUpdate {
     pub version: Version,
     pub release_notes_url: String,
+    /// Direct download URL for THIS platform's artifact — needed by
+    /// `apply_update.rs` to actually fetch it. Already verified by the
+    /// signature check above (the whole manifest, this field included,
+    /// only reaches here after `verify()` succeeds), so no additional
+    /// trust decision is needed before using it.
+    pub artifact_url: String,
+    /// Lowercase hex SHA-256, checked again by `updater::download_with_
+    /// checksum` before anything downloaded is ever executed — signature
+    /// verification proves the MANIFEST is genuine, not that the bytes
+    /// that eventually arrive over the wire are unmodified in transit.
+    pub artifact_sha256: String,
+    pub mandatory: bool,
 }
 
 fn verifying_key() -> VerifyingKey {
@@ -146,6 +158,9 @@ pub fn check_once(
     Some(AvailableUpdate {
         version: signed.manifest.version,
         release_notes_url: signed.manifest.release_notes_url,
+        artifact_url: signed.manifest.artifact_url,
+        artifact_sha256: signed.manifest.artifact_sha256,
+        mandatory: signed.manifest.mandatory,
     })
 }
 
@@ -221,6 +236,9 @@ mod tests {
             Some(AvailableUpdate {
                 version: Version::new(9, 9, 9),
                 release_notes_url: "https://example.invalid/notes".to_string(),
+                artifact_url: "https://example.invalid/artifact".to_string(),
+                artifact_sha256: "a".repeat(64),
+                mandatory: false,
             })
         );
     }
@@ -380,6 +398,9 @@ mod tests {
             Some(AvailableUpdate {
                 version: Version::new(9, 9, 9),
                 release_notes_url: "https://example.invalid/notes".to_string(),
+                artifact_url: "https://example.invalid/artifact".to_string(),
+                artifact_sha256: "a".repeat(64),
+                mandatory: false,
             })
         );
     }
